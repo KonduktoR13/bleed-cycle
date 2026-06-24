@@ -546,6 +546,28 @@ textarea:focus {
   gap: 7px;
 }
 
+.history-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  background: rgba(255, 250, 244, 0.76);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.history-intro h2 {
+  margin-bottom: 5px;
+}
+
+.history-intro p {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.35;
+}
+
 .history-title,
 .history-actions {
   display: flex;
@@ -751,6 +773,10 @@ textarea:focus {
 
   .forecast-item {
     grid-template-columns: 64px 1fr;
+  }
+
+  .history-intro {
+    grid-template-columns: 1fr;
   }
 
   .forecast-item .score-pill {
