@@ -615,6 +615,11 @@ textarea:focus {
   font-size: 0.82rem;
 }
 
+.history-warn {
+  color: #9f493a;
+  font-weight: 800;
+}
+
 .settings-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -694,6 +699,39 @@ textarea:focus {
   display: grid;
   gap: 10px;
   margin: 16px 0;
+}
+
+.confidence-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 12px 0 8px;
+}
+
+.confidence-item {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 249, 0.7);
+  padding: 8px;
+}
+
+.confidence-item span,
+.scale-note {
+  color: var(--muted);
+  font-size: 0.74rem;
+  line-height: 1.3;
+}
+
+.confidence-item strong {
+  color: var(--teal);
+  font-size: 0.78rem;
+}
+
+.scale-note {
+  margin: 0 0 12px;
 }
 
 .metric {
@@ -789,5 +827,9 @@ textarea:focus {
   .forecast-item .score-pill {
     grid-column: 2;
     justify-self: start;
+  }
+
+  .confidence-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
