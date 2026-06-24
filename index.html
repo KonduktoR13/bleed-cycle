@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#f7f3ee">
+    <meta name="description" content="Визуальный календарь эмоционального фона по фазам менструального цикла">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon.svg">
+    <link rel="stylesheet" href="styles.css">
+    <title>Тихий цикл</title>
+  </head>
+  <body>
+    <div id="app" class="app-shell">
+      <header class="topbar">
+        <div>
+          <p class="eyebrow">Локальный PWA</p>
+          <h1>Тихий цикл</h1>
+        </div>
+        <div class="top-actions">
+          <button class="install-button hidden-install" id="installButton" type="button">Установить</button>
+          <button class="icon-button" id="privacyLockButton" type="button" aria-label="Приватность">
+            <span aria-hidden="true">◐</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section id="onboarding" class="onboarding hidden" aria-labelledby="onboardingTitle">
+          <div class="intro-panel">
+            <p class="eyebrow">Первый запуск</p>
+            <h2 id="onboardingTitle">Введите дату начала последней менструации</h2>
+            <p>
+              Приложение построит ориентировочный календарь. Данные сохраняются только на этом устройстве.
+            </p>
+          </div>
+          <form id="cycleForm" class="setup-form">
+            <label>
+              <span>Дата начала</span>
+              <input id="startDateInput" name="startDate" type="date" required>
+            </label>
+            <label>
+              <span>Дата окончания, если известна</span>
+              <input id="endDateInput" name="endDate" type="date">
+            </label>
+            <label>
+              <span>Обычная длина цикла</span>
+              <input id="cycleLengthInput" name="cycleLength" type="number" min="21" max="45" value="28">
+            </label>
+            <label>
+              <span>Заметка</span>
+              <textarea id="cycleNoteInput" name="note" rows="3" placeholder="Например: сильная усталость, стрессовая неделя"></textarea>
+            </label>
+            <button class="primary-button" type="submit">Построить календарь</button>
+          </form>
+        </section>
+
+        <section id="dashboard" class="dashboard hidden">
+          <section class="summary-band" aria-label="Сводка дня">
+            <div class="today-card" id="todayCard"></div>
+            <div class="index-ring" aria-label="Эмоциональная нагрузка">
+              <svg viewBox="0 0 120 120" role="img">
+                <circle class="ring-bg" cx="60" cy="60" r="50"></circle>
+                <circle class="ring-value" id="indexRing" cx="60" cy="60" r="50"></circle>
+              </svg>
+              <div>
+                <strong id="indexValue">0</strong>
+                <span>индекс нагрузки</span>
+              </div>
+            </div>
+          </section>
+          <p class="index-explain">Индекс нагрузки — общий ориентир по чувствительности, тревожности, усталости, раздражительности, потребности в поддержке и ПМС-окну.</p>
+
+          <nav class="tabs" aria-label="Разделы">
+            <button class="tab active" data-view="calendar" type="button">Календарь</button>
+            <button class="tab" data-view="history" type="button">История</button>
+            <button class="tab" data-view="settings" type="button">Настройки</button>
+            <button class="tab" data-view="help" type="button">Справка</button>
+          </nav>
+
+          <section id="calendarView" class="view active">
+            <div class="calendar-toolbar">
+              <button class="icon-button" id="prevMonth" type="button" aria-label="Предыдущий месяц">‹</button>
+              <h2 id="monthTitle"></h2>
+              <button class="icon-button" id="nextMonth" type="button" aria-label="Следующий месяц">›</button>
+            </div>
+            <p class="strip-label">Цветная линия ниже — фазы текущего расчётного цикла по дням.</p>
+            <div class="phase-strip" id="phaseStrip" aria-label="Линия фаз цикла"></div>
+            <div class="weekdays" aria-hidden="true">
+              <span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span>
+            </div>
+            <div class="calendar-grid" id="calendarGrid"></div>
+            <div class="legend" id="legend"></div>
+            <section class="forecast-list" id="forecastList" aria-label="Ближайшие дни"></section>
+          </section>
+
+          <section id="historyView" class="view">
+            <div class="section-head">
+              <h2>История циклов</h2>
+              <button class="secondary-button" id="addCycleButton" type="button">Добавить начало</button>
+            </div>
+            <div id="historyList" class="history-list"></div>
+          </section>
+
+          <section id="settingsView" class="view">
+            <form id="settingsForm" class="settings-grid">
+              <label>
+                <span>Средняя длина цикла</span>
+                <input id="settingCycleLength" type="number" min="21" max="45">
+              </label>
+              <label>
+                <span>Менструация по умолчанию</span>
+                <input id="settingBleedLength" type="number" min="2" max="10">
+              </label>
+              <label>
+                <span>Детализация подсказок</span>
+                <select id="settingDetail">
+                  <option value="balanced">Сбалансированная</option>
+                  <option value="short">Краткая</option>
+                  <option value="full">Подробная</option>
+                </select>
+              </label>
+              <label>
+                <span>Визуальная тема</span>
+                <select id="settingTheme">
+                  <option value="soft">Мягкая</option>
+                  <option value="contrast">Контрастная</option>
+                </select>
+              </label>
+              <label class="toggle-row">
+                <input id="settingPrivate" type="checkbox">
+                <span>Приватный режим на главном экране</span>
+              </label>
+              <button class="primary-button" type="submit">Сохранить настройки</button>
+            </form>
+            <div class="data-actions">
+              <button class="secondary-button" id="exportButton" type="button">Экспорт JSON</button>
+              <label class="file-button">
+                Импорт JSON
+                <input id="importInput" type="file" accept="application/json">
+              </label>
+              <button class="danger-button" id="clearButton" type="button">Очистить данные</button>
+            </div>
+          </section>
+
+          <section id="helpView" class="view">
+            <div class="info-block">
+              <h2>Как читать календарь</h2>
+              <p>Цвет дня показывает ориентировочную эмоциональную нагрузку, а прозрачность отражает уверенность расчёта. Нажмите на день, чтобы увидеть фазу, шкалы и рекомендации.</p>
+            </div>
+            <div class="info-block">
+              <h2>На чём основан расчёт</h2>
+              <p>Модель собрана по исследовательской сводке проекта: клинические критерии ПМС/ПМДР, проспективные наблюдения, крупные данные трекеров цикла и данные о вариабельности овуляции. Главные окна модели: поздняя лютеиновая и перименструальная зона, восстановление после менструации и фертильное окно вокруг предполагаемой овуляции.</p>
+            </div>
+            <div class="info-block">
+              <h2>Ограничения</h2>
+              <p>Это приложение показывает ориентировочный прогноз на основе фаз менструального цикла и общих закономерностей. Шкалы 0–100 являются относительными индексами внутри расчётного цикла, а не точными медицинскими процентами. Приложение не ставит диагнозы и не заменяет консультацию врача.</p>
+            </div>
+            <div class="info-block">
+              <h2>Когда нужен врач</h2>
+              <p>Если каждый цикл возникают выраженная депрессия, паника, вспышки гнева, мысли о самоповреждении или резкое падение повседневного функционирования, нужна медицинская оценка.</p>
+            </div>
+            <div class="info-block">
+              <h2>Приватность</h2>
+              <p>Данные хранятся локально в браузере этого устройства. В приложении нет внешней аналитики и отправки истории цикла на сервер.</p>
+            </div>
+          </section>
+        </section>
+      </main>
+
+      <aside id="daySheet" class="day-sheet" aria-hidden="true">
+        <div class="sheet-backdrop" data-close-sheet></div>
+        <article class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+          <button class="icon-button close-button" data-close-sheet type="button" aria-label="Закрыть">×</button>
+          <div id="sheetContent"></div>
+        </article>
+      </aside>
+    </div>
+
+    <template id="addCycleTemplate">
+      <form class="setup-form compact" id="newCycleForm">
+        <label>
+          <span>Новое начало менструации</span>
+          <input id="newCycleStart" type="date" required>
+        </label>
+        <label>
+          <span>Окончание, если известно</span>
+          <input id="newCycleEnd" type="date">
+        </label>
+        <label>
+          <span>Заметка</span>
+          <textarea id="newCycleNote" rows="2"></textarea>
+        </label>
+        <button class="primary-button" type="submit">Добавить</button>
+      </form>
+    </template>
+
+    <script src="app.js" defer></script>
+  </body>
+</html>
