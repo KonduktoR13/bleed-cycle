@@ -270,7 +270,7 @@ function renderHistory() {
     const next = cycles[index - 1];
     const prevChronological = state.data.cycles.sort((a, b) => a.start.localeCompare(b.start))[state.data.cycles.findIndex((c) => c.start === cycle.start) + 1];
     const len = next ? daysBetween(parseDate(cycle.start), parseDate(next.start)) : estimateCycleLengthFor(cycle, prevChronological);
-    const bleed = cycle.end ? daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1 : state.data.settings.bleedLength;
+    const bleed = getBleedLength(cycle);
     const avg = getCycleLength();
     const drift = len ? len - avg : 0;
     return `
@@ -305,7 +305,7 @@ function renderHistory() {
 
 function renderSettings() {
   els.settingCycleLength.value = getCycleLength();
-  els.settingBleedLength.value = state.data.settings.bleedLength;
+  els.settingBleedLength.value = getTypicalBleedLength();
   els.settingDetail.value = state.data.settings.detail;
   els.settingTheme.value = state.data.settings.theme;
   els.settingPrivate.checked = state.data.settings.privateMode;
@@ -389,7 +389,7 @@ function getCycleLength() {
     const diff = daysBetween(starts[i - 1], starts[i]);
     if (diff >= 21 && diff <= 45) diffs.push(diff);
   }
-  if (diffs.length >= 2) return Math.round(median(diffs.slice(-6)));
+  if (diffs.length >= 1) return Math.round(median(diffs.slice(-6)));
   return Number(state.data.settings.cycleLength) || 28;
 }
 
@@ -404,6 +404,15 @@ function getCycleSd() {
 
 function getBleedLength(cycle) {
   if (cycle.end) return clamp(daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1, 2, 10);
+  return getTypicalBleedLength();
+}
+
+function getTypicalBleedLength() {
+  const lengths = state.data.cycles
+    .filter((cycle) => cycle.start && cycle.end)
+    .map((cycle) => daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1)
+    .filter((length) => length >= 2 && length <= 10);
+  if (lengths.length >= 1) return Math.round(median(lengths.slice(-6)));
   return Number(state.data.settings.bleedLength) || 5;
 }
 
