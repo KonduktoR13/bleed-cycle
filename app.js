@@ -25,7 +25,8 @@ const state = {
   data: loadData(),
   visibleMonth: startOfMonth(new Date()),
   selectedDate: stripTime(new Date()),
-  installPrompt: null
+  installPrompt: null,
+  updateWorker: null
 };
 
 const els = {};
@@ -47,7 +48,7 @@ function bindElements() {
     "phaseStrip", "legend", "forecastList", "historyList", "settingsForm", "settingCycleLength",
     "settingBleedLength", "settingDetail", "settingTheme", "settingPrivate", "daySheet",
     "sheetContent", "exportButton", "importInput", "clearButton", "addCycleButton",
-    "prevMonth", "nextMonth", "privacyLockButton", "installButton"
+    "prevMonth", "nextMonth", "privacyLockButton", "installButton", "updateButton"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -111,6 +112,7 @@ function bindEvents() {
     saveAndRender();
   });
   els.installButton.addEventListener("click", installApp);
+  els.updateButton.addEventListener("click", applyAppUpdate);
 
   window.addEventListener("beforeinstallprompt", (event) => {
     event.preventDefault();
@@ -619,9 +621,53 @@ function clearData() {
   saveAndRender();
 }
 
-function registerServiceWorker() {
+async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
-  navigator.serviceWorker.register("service-worker.js").catch(() => {});
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (refreshing) return;
+    refreshing = true;
+    window.location.reload();
+  });
+  try {
+    const registration = await navigator.serviceWorker.register("service-worker.js", { updateViaCache: "none" });
+    watchServiceWorker(registration);
+    registration.addEventListener("updatefound", () => watchServiceWorker(registration));
+    setTimeout(() => registration.update().catch(() => {}), 1000);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible") registration.update().catch(() => {});
+    });
+  } catch {
+    // Offline or unsupported update checks should not block the app.
+  }
+}
+
+function watchServiceWorker(registration) {
+  if (registration.waiting) {
+    showUpdateButton(registration.waiting);
+    return;
+  }
+  const worker = registration.installing;
+  if (!worker) return;
+  worker.addEventListener("statechange", () => {
+    if (worker.state === "installed" && navigator.serviceWorker.controller) {
+      showUpdateButton(worker);
+    }
+  });
+}
+
+function showUpdateButton(worker) {
+  state.updateWorker = worker;
+  if (els.updateButton) els.updateButton.classList.remove("hidden-install");
+}
+
+function applyAppUpdate() {
+  if (!state.updateWorker) {
+    window.location.reload();
+    return;
+  }
+  state.updateWorker.postMessage({ type: "SKIP_WAITING" });
+  window.location.reload();
 }
 
 async function installApp() {
