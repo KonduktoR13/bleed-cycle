@@ -11,3 +11,9 @@ https://konduktor13.github.io/bleed-cycle/
 ```bash
 python3 start_server.py
 ```
+
+Проверка расчетной модели:
+
+```bash
+node tests/model.test.js
+```
