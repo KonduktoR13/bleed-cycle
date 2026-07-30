@@ -1,4 +1,5 @@
 const STORAGE_KEY = "bleed-cycle-pwa-v1";
+const APP_VERSION = "v22";
 const MS_DAY = 24 * 60 * 60 * 1000;
 const LUTEAL_PRIOR_DAYS = 12;
 const MIN_VALID_CYCLE_DAYS = 21;
