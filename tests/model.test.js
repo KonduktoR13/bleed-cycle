@@ -171,13 +171,38 @@ function testCycleValidationRejectsBadDates() {
   assert.equal(model.normalizeCycleInput({ start: "2026-06-01", end: "2026-06-05" }).ok, true);
 }
 
+function testKnownLateStartSuppressesOldPredictedBleed() {
+  const model = loadModel();
+  setData(model, {
+    cycles: [
+      { start: "2026-05-31", end: "", note: "" },
+      { start: "2026-07-30", end: "", note: "" }
+    ],
+    settings: { cycleLength: 28, bleedLength: 5 }
+  });
+
+  const oldPredictedStart = model.buildDayModel(model.parseDate("2026-07-26"));
+  const dayBeforeActualStart = model.buildDayModel(model.parseDate("2026-07-29"));
+  const actualStart = model.buildDayModel(model.parseDate("2026-07-30"));
+
+  assert.equal(oldPredictedStart.isBleed, false);
+  assert.notEqual(oldPredictedStart.phase, "menstrual");
+  assert.equal(dayBeforeActualStart.cycleContext.source, "actual");
+  assert.equal(dayBeforeActualStart.cycleLength, 60);
+  assert.equal(model.daysBetween(dayBeforeActualStart.nextStartDate, model.parseDate("2026-07-30")), 0);
+  assert.equal(actualStart.isBleed, true);
+  assert.equal(actualStart.phase, "menstrual");
+  assert.equal(actualStart.cycleDay, 1);
+}
+
 [
   testOvulationIsSharedByPhaseAndSignals,
   testRelativeScalesReachMinimumAndMaximum,
   testCycleOutlierIsExcluded,
   testBleedLengthLearnsFromEnds,
   testConfidenceProfileIsSeparated,
-  testCycleValidationRejectsBadDates
+  testCycleValidationRejectsBadDates,
+  testKnownLateStartSuppressesOldPredictedBleed
 ].forEach((test) => test());
 
 console.log("model tests passed");

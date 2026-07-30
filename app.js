@@ -368,16 +368,26 @@ function buildDayModel(dateLike) {
   const date = stripTime(dateLike);
   const cycleStats = getCycleStats();
   const bleedStats = getBleedStats();
-  const cycleLen = cycleStats.length;
+  const forecastCycleLen = cycleStats.length;
   const cycle = getCycleForDate(date);
-  const start = getCycleAnchorStart(cycle, date, cycleLen);
+  const nextRecordedCycle = getNextCycleAfter(cycle.start);
+  const nextRecordedStart = nextRecordedCycle ? parseDate(nextRecordedCycle.start) : null;
+  const hasKnownNextStart = Boolean(nextRecordedStart && date < nextRecordedStart);
+  const start = hasKnownNextStart ? parseDate(cycle.start) : getCycleAnchorStart(cycle, date, forecastCycleLen);
+  const cycleLen = hasKnownNextStart ? daysBetween(start, nextRecordedStart) : forecastCycleLen;
   const bleedLen = getBleedLength(cycle);
   const cycleDay = daysBetween(start, date) + 1;
-  const projectedStart = addDays(start, cycleLen);
+  const projectedStart = hasKnownNextStart ? nextRecordedStart : addDays(start, forecastCycleLen);
   const expectedBleedEnd = addDays(projectedStart, bleedStats.length - 1);
   const ovulationDay = estimateOvulationDay(cycleLen);
   const ovulation = addDays(start, ovulationDay - 1);
   const daysToNext = daysBetween(date, projectedStart);
+  const cycleContext = {
+    source: hasKnownNextStart ? "actual" : "forecast",
+    length: cycleLen,
+    forecastLength: forecastCycleLen,
+    nextStartKnown: hasKnownNextStart
+  };
   const confidenceProfile = getConfidenceProfile(cycleStats, bleedStats);
   const fertileWindow = {
     startDay: clamp(ovulationDay - 5, 1, cycleLen),
@@ -414,11 +424,12 @@ function buildDayModel(dateLike) {
     confidenceProfile,
     cycleStats,
     bleedStats,
+    cycleContext,
     metrics,
     hormone: hormoneText(phase),
     summary: summaryText(phase, metrics),
     recommendations: recommendationsFor(phase, metrics),
-    explanation: explanationFor(phase, confidenceProfile, cycleStats, bleedStats),
+    explanation: explanationFor(phase, confidenceProfile, cycleStats, bleedStats, cycleContext),
     isBleed: cycleDay <= bleedLen,
     isFertile: cycleDay >= fertileWindow.startDay && cycleDay <= fertileWindow.endDay
   };
@@ -431,6 +442,10 @@ function getCycleForDate(date) {
     if (parseDate(cycle.start) <= date) current = cycle;
   }
   return current || { start: toInputDate(new Date()), end: "", note: "" };
+}
+
+function getNextCycleAfter(start) {
+  return getSortedCycles().find((cycle) => cycle.start > start) || null;
 }
 
 function getCycleAnchorStart(cycle, date, cycleLen) {
@@ -591,7 +606,9 @@ function getSortedCycles() {
 }
 
 function estimateOvulationDay(cycleLen) {
-  return clamp(cycleLen - LUTEAL_PRIOR_DAYS + 1, 8, cycleLen - 5);
+  const upper = Math.max(1, cycleLen - 5);
+  const lower = Math.min(8, upper);
+  return clamp(cycleLen - LUTEAL_PRIOR_DAYS + 1, lower, upper);
 }
 
 function cycleSignals(cycleDay, cycleLen, bleedLen, cycleSd = getCycleSd()) {
@@ -975,17 +992,20 @@ function recommendationsFor(phase, metrics) {
   return recs;
 }
 
-function explanationFor(phase, confidenceProfile, cycleStats, bleedStats) {
+function explanationFor(phase, confidenceProfile, cycleStats, bleedStats, cycleContext = null) {
   const cycleSource = cycleStats.source === "history"
     ? `Длина цикла ${cycleStats.length} дн. рассчитана по ${cycleStats.usedIntervals} последним валидным интервалам из ${cycleStats.validIntervals}.`
     : `Длина цикла ${cycleStats.length} дн. взята из настройки по умолчанию, потому что валидной истории пока мало.`;
+  const actualSpan = cycleContext?.source === "actual"
+    ? ` Для этого дня уже известна следующая фактическая менструация, поэтому участок считается фактическим циклом длиной ${cycleContext.length} дн., а не старым прогнозным перезапуском.`
+    : "";
   const excluded = cycleStats.excludedIntervals
     ? ` ${cycleStats.excludedIntervals} интервал(а) не участвует в среднем как слишком короткий, длинный или выброс.`
     : "";
   const bleedSource = bleedStats.source === "history"
     ? `Типичная менструация ${bleedStats.length} дн. рассчитана по ${bleedStats.usedCount} последним датам окончания.`
     : `Типичная менструация ${bleedStats.length} дн. взята из настройки по умолчанию.`;
-  return `${cycleSource}${excluded} ${bleedSource} Фертильное окно строится вокруг оценочной овуляции примерно за ${LUTEAL_PRIOR_DAYS} дней до следующей менструации; это не точный расчёт зачатия. Эмоциональные индексы используют плавные окна из модели: позднелютеиновый риск, перименструальный след, фолликулярное восстановление и фертильное окно. Уверенность индексов: ${confidenceText(confidenceProfile.emotional)}.`;
+  return `${cycleSource}${actualSpan}${excluded} ${bleedSource} Фертильное окно строится вокруг оценочной овуляции примерно за ${LUTEAL_PRIOR_DAYS} дней до следующей менструации; это не точный расчёт зачатия. Эмоциональные индексы используют плавные окна из модели: позднелютеиновый риск, перименструальный след, фолликулярное восстановление и фертильное окно. Уверенность индексов: ${confidenceText(confidenceProfile.emotional)}.`;
 }
 
 function confidenceText(value) {
