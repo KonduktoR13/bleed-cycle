@@ -1,9 +1,10 @@
-const CACHE_NAME = "bleed-cycle-pwa-v21";
+const CACHE_NAME = "bleed-cycle-pwa-v22";
+const APP_SHELL = "./index.html";
 const ASSETS = [
   "./",
-  "./index.html",
-  "./styles.css",
-  "./app.js",
+  APP_SHELL,
+  "./styles.css?v=22",
+  "./app.js?v=22",
   "./manifest.webmanifest",
   "./icon.svg",
   "./icon-192.png",
@@ -11,9 +12,7 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-  );
+  event.waitUntil(precacheFreshAssets());
   self.skipWaiting();
 });
 
@@ -31,7 +30,25 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") self.skipWaiting();
+  if (event.data?.type === "CLEAR_OLD_CACHES") {
+    event.waitUntil(deleteOldCaches());
+  }
 });
+
+function precacheFreshAssets() {
+  return caches.open(CACHE_NAME).then((cache) => Promise.all(
+    ASSETS.map((asset) => fetch(new Request(asset, { cache: "reload" })).then((response) => {
+      if (!response.ok) throw new Error(`Failed to cache ${asset}`);
+      return cache.put(asset, response);
+    }))
+  ));
+}
+
+function deleteOldCaches() {
+  return caches.keys().then((keys) => Promise.all(
+    keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+  ));
+}
 
 function refreshOpenClients() {
   return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => Promise.all(
@@ -47,28 +64,24 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).then((response) => {
+      fetch(new Request(event.request, { cache: "reload" })).then((response) => {
         const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put("./index.html", copy));
+        caches.open(CACHE_NAME).then((cache) => cache.put(APP_SHELL, copy));
         return response;
-      }).catch(() => caches.match("./index.html"))
+      }).catch(() => caches.match(APP_SHELL))
     );
     return;
   }
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      const fresh = fetch(event.request).then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        }
-        return response;
-      });
-      if (cached) {
-        fresh.catch(() => {});
-        return cached;
+    fetch(new Request(event.request, { cache: "reload" })).then((response) => {
+      if (response.ok) {
+        const copy = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
       }
-      return fresh.catch(() => caches.match("./index.html"));
-    })
+      return response;
+    }).catch(() => caches.match(event.request).then((cached) => {
+      if (cached) return cached;
+      return caches.match(APP_SHELL);
+    }))
   );
 });
