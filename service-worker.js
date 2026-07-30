@@ -1,4 +1,4 @@
-const CACHE_NAME = "bleed-cycle-pwa-v20";
+const CACHE_NAME = "bleed-cycle-pwa-v21";
 const ASSETS = [
   "./",
   "./index.html",
