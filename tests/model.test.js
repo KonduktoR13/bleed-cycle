@@ -19,7 +19,8 @@ globalThis.__model = {
   normalizeCycleInput,
   parseDate,
   addDays,
-  daysBetween
+  daysBetween,
+  upsertCycle
 };`;
 
   const context = {
@@ -87,7 +88,7 @@ function testOvulationIsSharedByPhaseAndSignals() {
   });
 
   const ovulationDay = model.estimateOvulationDay(28);
-  assert.equal(ovulationDay, 17);
+  assert.equal(ovulationDay, 15);
 
   const ovulationDate = model.addDays(model.parseDate("2026-05-31"), ovulationDay - 1);
   const day = model.buildDayModel(ovulationDate);
@@ -167,7 +168,7 @@ function testConfidenceProfileIsSeparated() {
 function testCycleValidationRejectsBadDates() {
   const model = loadModel();
   assert.equal(model.normalizeCycleInput({ start: "2026-06-10", end: "2026-06-09" }).ok, false);
-  assert.equal(model.normalizeCycleInput({ start: "2026-06-01", end: "2026-06-20" }).ok, false);
+  assert.equal(model.normalizeCycleInput({ start: "2026-06-01", end: "2026-06-20" }).ok, true);
   assert.equal(model.normalizeCycleInput({ start: "2026-06-01", end: "2026-06-05" }).ok, true);
 }
 
@@ -206,3 +207,78 @@ function testKnownLateStartSuppressesOldPredictedBleed() {
 ].forEach((test) => test());
 
 console.log("model tests passed");
+
+function testRepresentativeHistory() {
+  // Synthetic fixture: a gap followed by 29-, 28- and 31-day intervals.
+  const model = loadModel();
+  setData(model, {cycles: [
+    {start: "2025-01-01"}, {start: "2025-03-02", end: "2025-03-07"},
+    {start: "2025-03-31"}, {start: "2025-04-28", end: "2025-05-04"}, {start: "2025-05-29"}
+  ]});
+  const stats = model.getCycleStats();
+  assert.equal(stats.length, 29);
+  assert.equal(stats.excludedIntervals, 1);
+  assert.equal(stats.intervals[0].length, 60);
+  assert.equal(model.getBleedStats().length, 7);
+  const day = model.buildDayModel(model.parseDate("2025-05-30"));
+  assert.equal(day.cycleDay, 2);
+  assert.equal(inputDate(day.nextStartDate), "2025-06-27");
+  assert.equal(inputDate(day.predictionRange.start), "2025-06-24");
+  assert.equal(inputDate(day.predictionRange.end), "2025-06-30");
+  assert.equal(day.isRecordedBleed, false);
+  assert.equal(model.buildDayModel(model.parseDate("2025-05-29")).isRecordedBleed, true);
+  assert.equal(model.buildDayModel(model.parseDate("2025-02-28")).phase, "unknown");
+}
+
+function testNoInventedPastCycles() {
+  const model = loadModel();
+  setData(model, {cycles: [{start: "2025-01-01", end: "2025-01-01"}]});
+  const overdue = model.buildDayModel(model.parseDate("2025-01-29"));
+  assert.equal(overdue.cycleDay, 29);
+  assert.equal(overdue.isBleed, false);
+  assert.equal(overdue.overdue, true);
+  assert.equal(overdue.metrics.energy, null);
+  const before = model.buildDayModel(model.parseDate("2024-12-31"));
+  assert.equal(before.phase, "unknown");
+  assert.equal(before.isBleed, false);
+  assert.equal(before.isFertile, false);
+  assert.equal(model.buildDayModel(model.parseDate("2025-01-02")).isBleed, false);
+  assert.equal(model.getBleedStats().length, 1);
+}
+
+function testNormalizeMalformedBackup() {
+  const model = loadModel();
+  const data = model.normalizeData({cycles: [{start: "2026-02-30"}, {start: "2026-01-01", note: {x:1}}, {start: "2026-01-01", end: "2026-01-20"}], settings: {cycleLength: "oops", bleedLength: -10, detail: "oops"}});
+  assert.equal(data.cycles.length, 1);
+  assert.equal(data.cycles[0].end, "2026-01-20");
+  assert.equal(data.settings.cycleLength, 28);
+  assert.equal(data.settings.bleedLength, 1);
+  assert.equal(data.settings.detail, "balanced");
+  assert.equal(model.normalizeCycleInput({start: "2099-01-01"}).ok, false);
+}
+
+function testFutureForecastsAreExplicit() {
+  const model = loadModel();
+  const today = inputDate(new Date());
+  setData(model, {cycles: [{start: today, end: today}]});
+  const future = model.buildDayModel(model.addDays(model.parseDate(today), 28));
+  const now = model.buildDayModel(model.parseDate(today));
+  assert.equal(future.cycleDay, 1);
+  assert.equal(future.isRecordedBleed, false);
+  assert.equal(future.bleedLength, 1);
+  assert.ok(future.confidence < now.confidence);
+  assert.ok(future.predictionRange.end - future.predictionRange.start > now.predictionRange.end - now.predictionRange.start);
+}
+
+[testRepresentativeHistory, testNoInventedPastCycles, testNormalizeMalformedBackup, testFutureForecastsAreExplicit].forEach(test => test());
+console.log("history, missing records, validation and forecast regressions passed");
+
+function testEditingCannotReplaceAnotherRecord() {
+  const model = loadModel();
+  setData(model, {cycles: [{start: "2025-01-01", end: "2025-01-05"}, {start: "2025-02-01"}]});
+  assert.throws(() => model.upsertCycle({start: "2025-02-01"}, "2025-01-01"), /уже есть запись/);
+  assert.equal(model.state.data.cycles.length, 2);
+  assert.throws(() => model.upsertCycle({start: "2025-01-04"}), /пересекаются/);
+  assert.equal(model.state.data.cycles.length, 2);
+}
+testEditingCannotReplaceAnotherRecord();

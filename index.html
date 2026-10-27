@@ -4,18 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#f7f3ee">
-    <meta name="description" content="Визуальный календарь эмоционального фона по фазам менструального цикла">
+    <meta name="description" content="Личный календарь менструального цикла и заметок о самочувствии">
     <link rel="manifest" href="manifest.webmanifest">
     <link rel="icon" href="icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="icon.svg">
-    <link rel="stylesheet" href="styles.css?v=22">
+    <link rel="apple-touch-icon" href="icon-192.png">
+    <link rel="stylesheet" href="styles.css?v=23">
     <title>Тихий цикл</title>
   </head>
   <body>
     <div id="app" class="app-shell">
       <header class="topbar">
         <div>
-          <p class="eyebrow">Локальный PWA</p>
+          <p class="eyebrow">Личный календарь</p>
           <h1>Тихий цикл</h1>
         </div>
         <div class="top-actions">
@@ -55,6 +55,7 @@
             </label>
             <button class="primary-button" type="submit">Построить календарь</button>
           </form>
+          <label class="file-button welcome-import">Восстановить историю из JSON<input id="importWelcome" type="file" accept="application/json"></label>
         </section>
 
         <section id="dashboard" class="dashboard hidden">
@@ -71,8 +72,12 @@
               </div>
             </div>
           </section>
-          <p class="index-explain">Индекс нагрузки — суммарный расчётный ориентир по чувствительности, тревожности, усталости, раздражительности, потребности в поддержке и ПМС-окну. Это не диагноз и не медицинский процент.</p>
+          <p class="index-explain">Шкалы 0–100 иллюстрируют общую модель. Они не измеряют ваше самочувствие и не являются медицинскими процентами.</p>
 
+          <div class="quick-actions">
+            <button class="primary-button" id="quickStartButton" type="button">Отметить начало</button>
+            <button class="secondary-button" id="quickEndButton" type="button">Указать окончание</button>
+          </div>
           <nav class="tabs" aria-label="Разделы">
             <button class="tab active" data-view="calendar" type="button">Календарь</button>
             <button class="tab" data-view="history" type="button">История</button>
@@ -86,6 +91,7 @@
               <h2 id="monthTitle"></h2>
               <button class="icon-button" id="nextMonth" type="button" aria-label="Следующий месяц">›</button>
             </div>
+            <button class="mini-button today-button" id="todayButton" type="button">К текущему месяцу</button>
             <p class="strip-label">Цветная линия ниже — фазы текущего расчётного цикла по дням.</p>
             <div class="phase-strip" id="phaseStrip" aria-label="Линия фаз цикла"></div>
             <div class="weekdays" aria-hidden="true">
@@ -100,7 +106,7 @@
             <div class="history-intro">
               <div>
                 <h2>История циклов</h2>
-                <p>Добавляйте даты менструаций: приложение будет уточнять среднюю длину цикла, длительность кровотечения и положение фертильного окна.</p>
+                <p>Добавляйте даты менструаций: приложение будет уточнять типичную длину цикла, длительность кровотечения и положение фертильного окна.</p>
               </div>
               <button class="primary-button" id="addCycleButton" type="button">Добавить менструацию</button>
             </div>
@@ -110,12 +116,12 @@
           <section id="settingsView" class="view">
             <form id="settingsForm" class="settings-grid">
               <label>
-                <span>Средняя длина цикла</span>
+                <span>Длина цикла без истории</span>
                 <input id="settingCycleLength" type="number" min="21" max="45">
               </label>
               <label>
                 <span>Менструация по умолчанию</span>
-                <input id="settingBleedLength" type="number" min="2" max="10">
+                <input id="settingBleedLength" type="number" min="1" max="10">
               </label>
               <label>
                 <span>Детализация подсказок</span>
@@ -138,6 +144,7 @@
               </label>
               <button class="primary-button" type="submit">Сохранить настройки</button>
             </form>
+            <p class="scale-note">Эти значения используются, пока нет подходящих записей. При наличии истории расчёт уточняется автоматически.</p>
             <div class="data-actions">
               <button class="secondary-button" id="exportButton" type="button">Экспорт JSON</button>
               <label class="file-button">
@@ -160,6 +167,9 @@
             </div>
             <div class="info-block">
               <h2>Ограничения</h2>
+              <p>Пунктирная рамка отмечает расчётную менструацию, сплошная — запись о начале или окончании. Если расчётная дата прошла без новой записи, цикл продолжает отсчитываться от последнего фактического начала. До первой записи и внутри длинных промежутков фаза неизвестна.</p>
+              <p>По одним датам нельзя определить гормональный фон, настроение или либидо. При гормональной контрацепции, беременности, после родов и при нерегулярных циклах модель фаз может быть неприменима.</p>
+              <p>Овуляция часто происходит за 10–16 дней до следующей менструации, но календарь не подтверждает её. <a href="https://www.nhs.uk/conditions/periods/fertility-in-the-menstrual-cycle/" target="_blank" rel="noopener noreferrer">Объяснение NHS</a>.</p>
               <p>Это приложение показывает ориентировочный прогноз на основе фаз менструального цикла и общих закономерностей. Шкалы 0–100 являются относительными индексами внутри расчётного цикла, а не точными медицинскими процентами. Фертильное окно не является точной вероятностью беременности и не должно использоваться как контрацепция. Приложение не ставит диагнозы и не заменяет консультацию врача.</p>
             </div>
             <div class="info-block">
@@ -169,7 +179,8 @@
             <div class="info-block">
               <h2>Приватность</h2>
               <p>Данные хранятся локально в браузере этого устройства. В приложении нет внешней аналитики и отправки истории цикла на сервер.</p>
-              <p>Версия кэша приложения: v22.</p>
+              <p>Версия приложения: v23. Обновления загружаются при подключении к интернету и возвращении в приложение. История при этом сохраняется.</p>
+              <p>Приватный режим только скрывает экран от постороннего взгляда; он не шифрует данные. Экспортируйте JSON перед очисткой данных браузера или сменой устройства.</p>
             </div>
           </section>
         </section>
@@ -202,6 +213,6 @@
       </form>
     </template>
 
-    <script src="app.js?v=22" defer></script>
+    <script src="app.js?v=23" defer></script>
   </body>
 </html>

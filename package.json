@@ -1,0 +1,12 @@
+{
+  "name": "bleed-cycle",
+  "version": "23.0.0",
+  "private": true,
+  "scripts": {
+    "test": "node tests/model.test.js && node tests/service-worker.test.js",
+    "test:browser": "node tests/browser.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.64.0"
+  }
+}

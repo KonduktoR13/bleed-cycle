@@ -1,7 +1,7 @@
 const STORAGE_KEY = "bleed-cycle-pwa-v1";
-const APP_VERSION = "v22";
+const APP_VERSION = "v23";
 const MS_DAY = 24 * 60 * 60 * 1000;
-const LUTEAL_PRIOR_DAYS = 12;
+const LUTEAL_PRIOR_DAYS = 14;
 const MIN_VALID_CYCLE_DAYS = 21;
 const MAX_VALID_CYCLE_DAYS = 45;
 const MAX_VALID_BLEED_DAYS = 10;
@@ -11,10 +11,11 @@ const phaseLabels = {
   menstrual: "Менструальная фаза",
   early_follicular: "Ранняя фолликулярная",
   late_follicular: "Поздняя фолликулярная",
-  ovulatory: "Фертильное окно",
+  ovulatory: "Около предполагаемой овуляции",
   early_luteal: "Ранняя лютеиновая",
   mid_luteal: "Средняя лютеиновая",
-  late_luteal: "Поздняя лютеиновая"
+  late_luteal: "Поздняя лютеиновая",
+  unknown: "Недостаточно данных"
 };
 
 const phaseColors = {
@@ -24,7 +25,8 @@ const phaseColors = {
   ovulatory: "#f2b66d",
   early_luteal: "#9fc7a0",
   mid_luteal: "#b7a176",
-  late_luteal: "#7d5b75"
+  late_luteal: "#7d5b75",
+  unknown: "#b5bec0"
 };
 
 const state = {
@@ -45,6 +47,9 @@ document.addEventListener("DOMContentLoaded", () => {
   updateInstallButton();
   render();
   registerServiceWorker();
+  state.renderedDate = toInputDate(new Date());
+  document.addEventListener("visibilitychange", refreshCurrentDay);
+  setInterval(refreshCurrentDay, 60 * 1000);
 });
 
 function bindElements() {
@@ -54,7 +59,7 @@ function bindElements() {
     "phaseStrip", "legend", "forecastList", "historyList", "settingsForm", "settingCycleLength",
     "settingBleedLength", "settingDetail", "settingTheme", "settingPrivate", "daySheet",
     "sheetContent", "exportButton", "importInput", "clearButton", "addCycleButton",
-    "prevMonth", "nextMonth", "privacyLockButton", "installButton", "updateButton"
+    "prevMonth", "nextMonth", "todayButton", "quickStartButton", "quickEndButton", "importWelcome", "privacyLockButton", "installButton", "updateButton"
   ].forEach((id) => {
     els[id] = document.getElementById(id);
   });
@@ -64,7 +69,8 @@ function initializeDates() {
   const now = new Date();
   const today = toInputDate(now);
   els.startDateInput.value = today;
-  els.newCycleStart?.setAttribute("max", today);
+  els.startDateInput.max = today;
+  els.endDateInput.max = today;
   state.selectedDate = stripTime(now);
   state.visibleMonth = startOfMonth(now);
 }
@@ -103,13 +109,27 @@ function bindEvents() {
   els.settingsForm.addEventListener("submit", (event) => {
     event.preventDefault();
     state.data.settings.cycleLength = clamp(Number(els.settingCycleLength.value), 21, 45);
-    state.data.settings.bleedLength = clamp(Number(els.settingBleedLength.value), 2, 10);
+    state.data.settings.bleedLength = clamp(Number(els.settingBleedLength.value), 1, 10);
     state.data.settings.detail = els.settingDetail.value;
     state.data.settings.theme = els.settingTheme.value;
     state.data.settings.privateMode = els.settingPrivate.checked;
     saveAndRender();
   });
 
+  els.todayButton.addEventListener("click", () => { state.visibleMonth = startOfMonth(new Date()); render(); });
+  els.quickStartButton.addEventListener("click", () => openCycleSheet());
+  els.quickEndButton.addEventListener("click", () => openCycleSheet(getLatestCycle()));
+  els.importWelcome.addEventListener("change", importData);
+  document.addEventListener("keydown", (event) => {
+    if (!els.daySheet.classList.contains("open")) return;
+    if (event.key === "Escape") closeSheet();
+    if (event.key === "Tab") {
+      const nodes = [...els.daySheet.querySelectorAll('button, input, textarea, select, [tabindex="0"]')].filter(node => !node.disabled);
+      const first = nodes[0], last = nodes[nodes.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    }
+  });
   els.addCycleButton.addEventListener("click", () => openCycleSheet());
   els.exportButton.addEventListener("click", exportData);
   els.importInput.addEventListener("change", importData);
@@ -167,12 +187,11 @@ function normalizeData(input = {}) {
       .map((cycle) => {
         const endLooksValid = cycle.end
           && isInputDate(cycle.end)
-          && daysBetween(parseDate(cycle.start), parseDate(cycle.end)) >= 0
-          && daysBetween(parseDate(cycle.start), parseDate(cycle.end)) < MAX_VALID_BLEED_DAYS;
+          && daysBetween(parseDate(cycle.start), parseDate(cycle.end)) >= 0;
         return {
           start: cycle.start,
           end: endLooksValid ? cycle.end : "",
-          note: cycle.note || ""
+          note: typeof cycle.note === "string" ? cycle.note : ""
         };
       })
       .sort((a, b) => a.start.localeCompare(b.start))
@@ -180,18 +199,28 @@ function normalizeData(input = {}) {
   return {
     ...fallback,
     ...source,
-    cycles,
+    cycles: [...new Map(cycles.map(cycle => [cycle.start, cycle])).values()],
     notes: source.notes && typeof source.notes === "object" ? source.notes : fallback.notes,
     overrides: source.overrides && typeof source.overrides === "object" ? source.overrides : fallback.overrides,
     settings: {
       ...fallback.settings,
-      ...(source.settings || {})
+      ...(source.settings || {}),
+      cycleLength: Math.round(clamp(Number(source.settings?.cycleLength) || 28, 21, 45)),
+      bleedLength: Math.round(clamp(Number(source.settings?.bleedLength) || 5, 1, 10)),
+      detail: ["short", "balanced", "full"].includes(source.settings?.detail) ? source.settings.detail : "balanced",
+      theme: source.settings?.theme === "contrast" ? "contrast" : "soft"
     }
   };
 }
 
 function saveData() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state.data));
+    return true;
+  } catch {
+    alert("Не удалось сохранить данные на устройстве. Экспортируйте JSON, чтобы не потерять изменения.");
+    return false;
+  }
 }
 
 function saveAndRender() {
@@ -216,15 +245,18 @@ function render() {
 
 function renderToday() {
   const today = buildDayModel(new Date());
+  const latest = getLatestCycle();
+  els.quickEndButton.classList.toggle("hidden", Boolean(latest.end));
   els.todayCard.innerHTML = `
     <p class="eyebrow">Сегодня, ${formatDate(today.date)}</p>
     <h2>${today.phaseLabel}</h2>
     <p>${today.summary}</p>
-    <p class="history-meta">День цикла ${today.cycleDay} из ${today.cycleLength} · уверенность ${confidenceText(today.confidence)}</p>
-    <p class="history-meta">Следующая менструация: ~${formatDate(today.nextStartDate)} · окончание: ~${formatDate(today.expectedBleedEndDate)}</p>
+    <p class="history-meta">${today.cycleDay > 0 ? `День ${today.cycleDay} · ориентир ${today.cycleStats.length} дн.` : "До первой записи"} · надёжность дат ${confidenceText(today.confidence)}</p>
+    <p class="history-meta">${predictionText(today)}</p>
+    ${today.isBleed ? `<p class="history-meta">Окончание этой менструации: ${latest.end ? "" : "~"}${formatDate(addDays(parseDate(latest.start), today.bleedLength - 1))}${latest.end ? " · отмечено" : " · по длительности из истории"}.</p>` : ""}
   `;
-  els.indexValue.textContent = String(today.metrics.load);
-  const offset = 314 - (314 * today.metrics.load) / 100;
+  els.indexValue.textContent = today.metrics.load === null ? "—" : String(today.metrics.load);
+  const offset = 314 - (314 * (today.metrics.load || 0)) / 100;
   els.indexRing.style.strokeDashoffset = String(offset);
 }
 
@@ -241,19 +273,22 @@ function renderCalendar() {
     cell.style.background = dayBackground(model);
     cell.style.setProperty("--phase-color", phaseColors[model.phase]);
     cell.style.setProperty("--load-color", loadColor(model.metrics.load));
-    cell.style.opacity = model.confidence < 45 ? "0.72" : "1";
+    cell.style.opacity = model.unknown ? "0.65" : "1";
     cell.classList.toggle("outside", date.getMonth() !== state.visibleMonth.getMonth());
     cell.classList.toggle("today", sameDay(date, new Date()));
+    if (sameDay(date, new Date())) cell.setAttribute("aria-current", "date");
+    cell.classList.toggle("recorded-bleed", model.isRecordedBleed);
+    cell.classList.toggle("predicted", model.isBleed && !model.isRecordedBleed);
     cell.setAttribute(
       "aria-label",
-      `${formatDate(date)}, день цикла ${model.cycleDay}, ${model.phaseLabel}, индекс нагрузки ${model.metrics.load}, уверенность ${confidenceText(model.confidence)}`
+      `${formatDate(date)}, день цикла ${model.cycleDay}, ${model.phaseLabel}, индекс нагрузки ${model.metrics.load ?? "—"}, уверенность ${confidenceText(model.confidence)}`
     );
     cell.innerHTML = `
       <span class="phase-band" aria-hidden="true"></span>
       <strong>${date.getDate()}</strong>
       <div class="day-markers">${markers(model)}</div>
       <small>${shortPhase(model.phase)}</small>
-      <span class="load-meter" aria-hidden="true"><span style="width:${model.metrics.load}%"></span></span>
+      <span class="load-meter" aria-hidden="true"><span style="width:${model.metrics.load ?? 0}%"></span></span>
     `;
     cell.addEventListener("click", () => openDaySheet(model));
     els.calendarGrid.appendChild(cell);
@@ -278,11 +313,11 @@ function renderPhaseStrip() {
 
 function renderLegend() {
   const items = [
-    { label: "Фон клетки: индекс нагрузки", swatch: "background: linear-gradient(90deg, #e7f4ef, #f6e7a8, #ef9a87, #c97b97)" },
+    { label: "Фон клетки: модель нагрузки", swatch: "background: linear-gradient(90deg, #e7f4ef, #f6e7a8, #ef9a87, #c97b97)" },
     { label: "Верхняя полоска: фаза цикла", swatch: `background: linear-gradient(90deg, ${phaseColors.menstrual}, ${phaseColors.early_follicular}, ${phaseColors.late_follicular}, ${phaseColors.ovulatory}, ${phaseColors.late_luteal})` },
     { label: "Нижняя полоска: сила нагрузки", swatch: "background: linear-gradient(90deg, #5da995 18%, transparent 18%, transparent 28%, #d69f3d 28%, #d69f3d 62%, transparent 62%, transparent 72%, #9a527c 72%)" },
-    { label: "Капля: менструация", marker: "bleed" },
-    { label: "Ромб: фертильное окно", marker: "fertile" },
+    { label: "Капля: запись / пунктир — прогноз", marker: "bleed" },
+    { label: "Ромб: оценка фертильного окна", marker: "fertile" },
     { label: "Квадрат: больше поддержки", marker: "support" }
   ];
   els.legend.innerHTML = items.map((item) => `
@@ -302,8 +337,8 @@ function renderForecast() {
     item.className = "forecast-item";
     item.innerHTML = `
       <strong>${i === 0 ? "Сегодня" : formatWeekday(model.date)}</strong>
-      <span>${model.recommendations[0]}</span>
-      <span class="score-pill">${model.metrics.load}</span>
+      <span>${shortRecommendation(model)}</span>
+      <span class="score-pill">${model.metrics.load ?? "—"}</span>
     `;
     item.addEventListener("click", () => openDaySheet(model));
     els.forecastList.appendChild(item);
@@ -334,7 +369,8 @@ function renderHistory() {
           <span>${cycle.end ? `до ${formatDate(parseDate(cycle.end))}` : "окончание не указано"}</span>
           <span class="${interval && !interval.valid ? "history-warn" : ""}">${intervalLabel}</span>
           <span>${bleedLabel}</span>
-          ${interval?.valid ? `<span>${drift === 0 ? "около среднего" : `${drift > 0 ? "+" : ""}${drift} дн. к расчету`}</span>` : ""}
+          ${cycle.end && bleed > MAX_VALID_BLEED_DAYS ? '<span class="history-warn">Длительность сохранена, но не участвует в типичной оценке (более 10 дней)</span>' : ""}
+          ${interval?.valid ? `<span>${drift === 0 ? "около типичного" : `${drift > 0 ? "+" : ""}${drift} дн. к расчету`}</span>` : ""}
         </div>
         ${cycle.note ? `<p>${escapeHtml(cycle.note)}</p>` : ""}
       </article>
@@ -358,8 +394,8 @@ function historyIntervalLabel(interval) {
 }
 
 function renderSettings() {
-  els.settingCycleLength.value = getCycleLength();
-  els.settingBleedLength.value = getTypicalBleedLength();
+  els.settingCycleLength.value = state.data.settings.cycleLength;
+  els.settingBleedLength.value = state.data.settings.bleedLength;
   els.settingDetail.value = state.data.settings.detail;
   els.settingTheme.value = state.data.settings.theme;
   els.settingPrivate.checked = state.data.settings.privateMode;
@@ -374,9 +410,15 @@ function buildDayModel(dateLike) {
   const nextRecordedCycle = getNextCycleAfter(cycle.start);
   const nextRecordedStart = nextRecordedCycle ? parseDate(nextRecordedCycle.start) : null;
   const hasKnownNextStart = Boolean(nextRecordedStart && date < nextRecordedStart);
-  const start = hasKnownNextStart ? parseDate(cycle.start) : getCycleAnchorStart(cycle, date, forecastCycleLen);
+  const baseStart = parseDate(cycle.start);
+  const today = stripTime(new Date());
+  const firstPrediction = addDays(baseStart, forecastCycleLen);
+  // Never invent a new cycle in the recorded past or after an unconfirmed overdue start.
+  const canProject = date > today && firstPrediction > today && !hasKnownNextStart;
+  const start = canProject ? getCycleAnchorStart(cycle, date, forecastCycleLen) : baseStart;
+  const projectedCycles = canProject ? Math.max(0, Math.floor(daysBetween(baseStart, date) / forecastCycleLen)) : 0;
   const cycleLen = hasKnownNextStart ? daysBetween(start, nextRecordedStart) : forecastCycleLen;
-  const bleedLen = getBleedLength(cycle);
+  const bleedLen = projectedCycles ? bleedStats.length : getBleedLength(cycle);
   const cycleDay = daysBetween(start, date) + 1;
   const projectedStart = hasKnownNextStart ? nextRecordedStart : addDays(start, forecastCycleLen);
   const expectedBleedEnd = addDays(projectedStart, bleedStats.length - 1);
@@ -389,7 +431,15 @@ function buildDayModel(dateLike) {
     forecastLength: forecastCycleLen,
     nextStartKnown: hasKnownNextStart
   };
-  const confidenceProfile = getConfidenceProfile(cycleStats, bleedStats);
+  const beforeHistory = date < baseStart;
+  const overdue = !hasKnownNextStart && !projectedCycles && date >= firstPrediction;
+  const uncertainGap = hasKnownNextStart && (cycleLen < MIN_VALID_CYCLE_DAYS || cycleLen > MAX_VALID_CYCLE_DAYS);
+  const recordedBleed = !beforeHistory && !projectedCycles && (sameDay(date, baseStart) || Boolean(cycle.end && date <= parseDate(cycle.end)));
+  const unknown = beforeHistory || (overdue || uncertainGap) && !recordedBleed && cycleDay > bleedLen;
+  const confidenceProfile = { ...getConfidenceProfile(cycleStats, bleedStats) };
+  confidenceProfile.timing = clamp(confidenceProfile.timing - projectedCycles * 12 - (overdue ? 20 : 0), 18, 88);
+  confidenceProfile.overall = unknown ? 20 : confidenceProfile.timing;
+  const rangeDays = Math.ceil(Math.max(2 + Math.max(0, 4 - cycleStats.usedIntervals), cycleStats.sd * 1.5) * Math.sqrt(projectedCycles + 1));
   const fertileWindow = {
     startDay: clamp(ovulationDay - 5, 1, cycleLen),
     endDay: clamp(ovulationDay + 1, 1, cycleLen)
@@ -406,7 +456,11 @@ function buildDayModel(dateLike) {
 
   const signals = cycleSignals(cycleDay, cycleLen, bleedLen, cycleStats.sd);
   const raw = rawMetrics(signals);
-  const metrics = normalizedMetricsForDay(cycleDay, cycleLen, bleedLen, raw, cycleStats.sd);
+  let metrics = normalizedMetricsForDay(cycleDay, cycleLen, bleedLen, raw, cycleStats.sd);
+  if (unknown) {
+    phase = "unknown";
+    metrics = Object.fromEntries(Object.keys(metrics).map(key => [key, null]));
+  }
 
   return {
     date,
@@ -414,7 +468,12 @@ function buildDayModel(dateLike) {
     cycleLength: cycleLen,
     bleedLength: bleedLen,
     daysToNext,
-    nextStartDate: projectedStart,
+    nextStartDate: beforeHistory ? baseStart : projectedStart,
+    predictionRange: { start: addDays(projectedStart, -rangeDays), end: addDays(projectedStart, rangeDays) },
+    overdue,
+    unknown,
+    projectedCycles,
+    isRecordedBleed: recordedBleed,
     expectedBleedEndDate: expectedBleedEnd,
     ovulationDay,
     ovulationDate: ovulation,
@@ -431,8 +490,8 @@ function buildDayModel(dateLike) {
     summary: summaryText(phase, metrics),
     recommendations: recommendationsFor(phase, metrics),
     explanation: explanationFor(phase, confidenceProfile, cycleStats, bleedStats, cycleContext),
-    isBleed: cycleDay <= bleedLen,
-    isFertile: cycleDay >= fertileWindow.startDay && cycleDay <= fertileWindow.endDay
+    isBleed: !unknown && cycleDay >= 1 && cycleDay <= bleedLen,
+    isFertile: !unknown && cycleDay >= fertileWindow.startDay && cycleDay <= fertileWindow.endDay
   };
 }
 
@@ -462,6 +521,14 @@ function upsertCycle(cycle, previousStart = null) {
     alert(normalized.message);
     return false;
   }
+  if (previousStart && previousStart !== normalized.cycle.start && state.data.cycles.some(item => item.start === normalized.cycle.start)) {
+    alert("На эту дату уже есть запись. Измените её в истории.");
+    return false;
+  }
+  const candidate = normalized.cycle;
+  const overlap = state.data.cycles.some(item => item.start !== previousStart && item.start !== candidate.start &&
+    ((item.start < candidate.start && item.end && item.end >= candidate.start) || (candidate.end && item.start > candidate.start && item.start <= candidate.end)));
+  if (overlap) { alert("Даты кровотечения пересекаются с другой записью. Проверьте историю."); return false; }
   if (previousStart && previousStart !== normalized.cycle.start) {
     state.data.cycles = state.data.cycles.filter((item) => item.start !== previousStart);
   }
@@ -475,20 +542,18 @@ function upsertCycle(cycle, previousStart = null) {
 function normalizeCycleInput(cycle) {
   if (!cycle.start) return { ok: false, message: "Укажите дату начала менструации." };
   if (!isInputDate(cycle.start)) return { ok: false, message: "Проверьте дату начала менструации." };
+  if (cycle.start > toInputDate(new Date()) || cycle.end > toInputDate(new Date())) return { ok: false, message: "Фактическую менструацию нельзя записать будущей датой." };
   if (cycle.end && !isInputDate(cycle.end)) return { ok: false, message: "Проверьте дату окончания менструации." };
   if (cycle.end) {
     const length = daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1;
     if (length < 1) return { ok: false, message: "Дата окончания не может быть раньше даты начала." };
-    if (length > MAX_VALID_BLEED_DAYS) {
-      return { ok: false, message: `Проверьте дату окончания: сейчас получилось ${length} дней, а модель принимает до ${MAX_VALID_BLEED_DAYS} дней.` };
-    }
   }
   return {
     ok: true,
     cycle: {
       start: cycle.start,
       end: cycle.end || "",
-      note: cycle.note || ""
+      note: typeof cycle.note === "string" ? cycle.note : ""
     }
   };
 }
@@ -506,7 +571,7 @@ function getCycleSd() {
 }
 
 function getBleedLength(cycle) {
-  if (cycle.end) return clamp(daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1, 2, 10);
+  if (cycle.end) return daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1;
   return getBleedStats().length;
 }
 
@@ -572,9 +637,9 @@ function getBleedStats() {
     .map((cycle) => daysBetween(parseDate(cycle.start), parseDate(cycle.end)) + 1)
     .filter((length) => length >= 1 && length <= MAX_VALID_BLEED_DAYS);
   const recent = lengths.slice(-RECENT_SAMPLE_LIMIT);
-  const fallback = clamp(Number(state.data.settings.bleedLength) || 5, 2, MAX_VALID_BLEED_DAYS);
+  const fallback = clamp(Number(state.data.settings.bleedLength) || 5, 1, MAX_VALID_BLEED_DAYS);
   return {
-    length: recent.length ? clamp(Math.round(weightedMedian(recent)), 2, MAX_VALID_BLEED_DAYS) : fallback,
+    length: recent.length ? clamp(Math.round(weightedMedian(recent)), 1, MAX_VALID_BLEED_DAYS) : fallback,
     sd: recent.length >= 3 ? standardDeviation(recent) : 1.5,
     sampleCount: lengths.length,
     usedCount: recent.length,
@@ -593,7 +658,7 @@ function getConfidenceProfile(cycleStats = getCycleStats(), bleedStats = getBlee
   bleed = clamp(Math.round(bleed), 24, 86);
 
   const fertility = clamp(Math.round(timing - 14 - Math.max(0, cycleStats.sd - 4) * 2), 14, 76);
-  const emotional = clamp(Math.round(timing * 0.6 + bleed * 0.18 + 18), 22, 82);
+  const emotional = 25; // Dates alone cannot validate an individual emotional forecast.
   const overall = clamp(Math.round(timing * 0.34 + bleed * 0.18 + fertility * 0.18 + emotional * 0.3), 20, 86);
   return { overall, timing, bleed, fertility, emotional };
 }
@@ -703,41 +768,60 @@ function openDaySheet(model) {
     <div class="sheet-title">
       <p class="eyebrow">${formatDate(model.date)} · день цикла ${model.cycleDay}</p>
       <h2 id="sheetTitle">${model.phaseLabel}</h2>
+      <p class="scale-note">${model.isRecordedBleed ? "Менструация отмечена в истории." : model.unknown ? "Недостаточно записей для расчёта." : "Фаза рассчитана по датам и не подтверждена наблюдениями."}</p>
       <p>${model.summary}</p>
     </div>
     <div class="history-meta">
       <span>Общая уверенность ${confidenceText(model.confidence)}</span>
-      <span>${model.hormone}</span>
-      <span>следующая менструация ~${formatDate(model.nextStartDate)}</span>
-      <span>примерный конец ~${formatDate(model.expectedBleedEndDate)}</span>
+      <span>Модель фазы: ${model.hormone}</span>
+      <span>${predictionText(model)}</span>
     </div>
     <div class="confidence-grid" aria-label="Уверенность расчёта">
       ${confidenceItem("Цикл", model.confidenceProfile.timing)}
       ${confidenceItem("Менструация", model.confidenceProfile.bleed)}
       ${confidenceItem("Фертильность", model.confidenceProfile.fertility)}
-      ${confidenceItem("Индексы", model.confidenceProfile.emotional)}
+      ${confidenceItem("Самочувствие", model.confidenceProfile.emotional)}
     </div>
     <p class="scale-note">Шкалы 0–100 — относительные индексы внутри расчётного цикла, а не медицинские проценты и не точная вероятность беременности.</p>
     <div class="metric-list">
-      ${metricNames.map(([key, label]) => metricRow(label, model.metrics[key])).join("")}
+      ${(state.data.settings.detail === "short" ? metricNames.filter(([key]) => ["energy", "fatigue", "support", "pms"].includes(key)) : metricNames).map(([key, label]) => metricRow(label, model.metrics[key])).join("")}
     </div>
     <div class="note-box">
       <strong>Рекомендации по общению</strong>
-      <p>${model.recommendations.join(" ")}</p>
+      <p>${(state.data.settings.detail === "short" ? model.recommendations.slice(0, 1) : model.recommendations).join(" ")}</p>
     </div>
+    <label class="day-note-label"><span>Заметка о самочувствии</span><textarea id="dayNote" rows="3" placeholder="Как вы себя чувствуете на самом деле?"></textarea></label>
+    <button class="secondary-button" id="saveDayNote" type="button">Сохранить заметку</button>
+    <p id="noteStatus" role="status"></p>
     <div class="info-block">
       <h3>Почему такой прогноз</h3>
       <p>${model.explanation}</p>
+      ${state.data.settings.detail === "full" ? `<p>Разброс интервалов: ${model.cycleStats.sd.toFixed(1)} дн. Диапазон дат — ориентир, а не статистически проверенный доверительный интервал.</p>` : ""}
     </div>
   `;
-  els.daySheet.classList.add("open");
-  els.daySheet.setAttribute("aria-hidden", "false");
+  const key = toInputDate(model.date);
+  document.getElementById("dayNote").value = typeof state.data.notes[key] === "string" ? state.data.notes[key] : "";
+  document.getElementById("saveDayNote").addEventListener("click", () => {
+    const value = document.getElementById("dayNote").value.trim();
+    if (value) state.data.notes[key] = value;
+    else delete state.data.notes[key];
+    if (saveData()) {
+      document.getElementById("noteStatus").textContent = "Заметка сохранена на устройстве";
+      const cell = [...els.calendarGrid.children].find(cell => cell.getAttribute("aria-label").startsWith(`${formatDate(model.date)},`));
+      if (cell) cell.querySelector(".day-markers").innerHTML = markers(model);
+    }
+  });
+  showSheet();
 }
 
 function openCycleSheet(cycle = null) {
+  cycle ||= state.data.cycles.find(item => item.start === toInputDate(new Date())) || null;
   const template = document.getElementById("addCycleTemplate");
   els.sheetContent.innerHTML = `<h2 id="sheetTitle">${cycle ? "Изменить цикл" : "Добавить цикл"}</h2>`;
   els.sheetContent.appendChild(template.content.cloneNode(true));
+  document.getElementById("newCycleStart").value = toInputDate(new Date());
+  document.getElementById("newCycleStart").max = toInputDate(new Date());
+  document.getElementById("newCycleEnd").max = toInputDate(new Date());
   if (cycle) {
     document.getElementById("newCycleStart").value = cycle.start;
     document.getElementById("newCycleEnd").value = cycle.end || "";
@@ -755,8 +839,7 @@ function openCycleSheet(cycle = null) {
     closeSheet();
     saveAndRender();
   });
-  els.daySheet.classList.add("open");
-  els.daySheet.setAttribute("aria-hidden", "false");
+  showSheet();
 }
 
 function deleteCycle(start) {
@@ -767,9 +850,19 @@ function deleteCycle(start) {
   saveAndRender();
 }
 
+function showSheet() {
+  state.sheetOpener = document.activeElement;
+  els.daySheet.classList.add("open");
+  els.daySheet.setAttribute("aria-hidden", "false");
+  document.body.classList.add("sheet-open");
+  els.daySheet.querySelector("input, button").focus();
+}
+
 function closeSheet() {
   els.daySheet.classList.remove("open");
   els.daySheet.setAttribute("aria-hidden", "true");
+  document.body.classList.remove("sheet-open");
+  state.sheetOpener?.focus();
 }
 
 function switchView(view) {
@@ -794,13 +887,19 @@ function exportData() {
 
 function importData(event) {
   const file = event.target.files[0];
+  event.target.value = "";
   if (!file) return;
   const reader = new FileReader();
   reader.onload = () => {
     try {
       const imported = JSON.parse(String(reader.result));
-      if (!Array.isArray(imported.cycles)) throw new Error("bad shape");
-      state.data = normalizeData(imported);
+      if (!imported || imported.version !== 1 || !Array.isArray(imported.cycles)) throw new Error("bad shape");
+      if (imported.cycles.some(cycle => !cycle || !isInputDate(cycle.start) || (cycle.end && (!isInputDate(cycle.end) || cycle.end < cycle.start)))) throw new Error("invalid dates");
+      if (new Set(imported.cycles.map(cycle => cycle.start)).size !== imported.cycles.length) throw new Error("duplicate dates");
+      const normalized = normalizeData(imported);
+      if (imported.cycles.length && !normalized.cycles.length) throw new Error("no valid cycles");
+      if (state.data.cycles.length && !confirm("Заменить текущую историю и настройки данными из файла? Сначала можно отменить и экспортировать свою историю.")) return;
+      state.data = normalized;
       saveAndRender();
     } catch {
       alert("Не удалось импортировать файл. Проверьте, что это JSON-экспорт приложения.");
@@ -818,8 +917,15 @@ function clearData() {
 async function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   let refreshing = false;
+  let hasBeenControlled = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.addEventListener("controllerchange", () => {
     if (refreshing) return;
+    if (!hasBeenControlled) { hasBeenControlled = true; return; }
+    if (els.daySheet.classList.contains("open") || document.activeElement?.closest("form")) {
+      state.updateWorker = null;
+      els.updateButton.classList.remove("hidden-install");
+      return;
+    }
     refreshing = true;
     window.location.reload();
   });
@@ -828,6 +934,9 @@ async function registerServiceWorker() {
     watchServiceWorker(registration);
     registration.addEventListener("updatefound", () => watchServiceWorker(registration));
     setTimeout(() => registration.update().catch(() => {}), 1000);
+    setInterval(() => {
+      if (document.visibilityState === "visible") registration.update().catch(() => {});
+    }, 60 * 60 * 1000);
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "visible") registration.update().catch(() => {});
     });
@@ -856,12 +965,11 @@ function showUpdateButton(worker) {
 }
 
 function applyAppUpdate() {
-  if (!state.updateWorker) {
+  if (!state.updateWorker || state.updateWorker.state === "activated") {
     window.location.reload();
     return;
   }
   state.updateWorker.postMessage({ type: "SKIP_WAITING" });
-  window.location.reload();
 }
 
 async function installApp() {
@@ -885,6 +993,7 @@ function isStandalone() {
 
 function dayBackground(model) {
   const load = model.metrics.load;
+  if (load === null) return "var(--surface)";
   const alpha = 0.82 + model.confidence / 500;
   if (load < 20) return `linear-gradient(135deg, rgba(231,244,239,${alpha}), rgba(250,253,250,0.98))`;
   if (load < 40) return `linear-gradient(135deg, rgba(210,235,238,${alpha}), rgba(239,248,244,0.96))`;
@@ -903,6 +1012,7 @@ function loadColor(load) {
 
 function markers(model) {
   const output = [];
+  if (state.data.notes[toInputDate(model.date)]) output.push('<span class="note-marker" title="Есть заметка">•</span>');
   const supportMarker = model.metrics.support >= 58 || (model.isBleed && model.metrics.fatigue >= 58);
   if (model.isBleed) output.push('<span class="marker bleed" title="Менструация"></span>');
   if (model.isFertile) output.push('<span class="marker fertile" title="Фертильное окно"></span>');
@@ -911,6 +1021,7 @@ function markers(model) {
 }
 
 function metricRow(label, value) {
+  if (value === null) return `<div class="metric"><span>${label}</span><span> — нет данных</span></div>`;
   return `
     <div class="metric">
       <div class="metric-head"><span>${label}</span><span>${value}</span></div>
@@ -929,6 +1040,7 @@ function confidenceItem(label, value) {
 }
 
 function hormoneText(phase) {
+  if (phase === "unknown") return "Фаза и гормональный фон не определены";
   const map = {
     menstrual: "после падения эстрогена и прогестерона",
     early_follicular: "низкий прогестерон, постепенное восстановление эстрадиола",
@@ -942,15 +1054,17 @@ function hormoneText(phase) {
 }
 
 function summaryText(phase, metrics) {
-  if (phase === "menstrual") return "Модель показывает перименструальное окно: вероятнее ниже ресурс и выше потребность в спокойном темпе.";
-  if (phase === "ovulatory") return "Оценочное фертильное окно вокруг предполагаемой овуляции: у части женщин выше энергия, социальность и сексуальный интерес.";
-  if (phase === "late_luteal") return "Поздняя лютеиновая фаза: чаще растут чувствительность, тревожность, усталость и потребность в поддержке.";
+  if (phase === "unknown") return "Нет подтверждённых данных для определения фазы. Добавьте пропущенную менструацию, если она была.";
+  if (phase === "menstrual") return "Возможен более спокойный темп. Реальное самочувствие важнее расчёта.";
+  if (phase === "ovulatory") return "Окно около предполагаемой овуляции. Оценка только по календарю.";
+  if (phase === "late_luteal") return "Расчётное предменструальное окно. Симптомы индивидуальны.";
   if (metrics.energy > 72 && metrics.social > 65) return "День выглядит ресурсным: активность, общение и лёгкие планы могут даваться проще.";
   if (metrics.stability > 70 && metrics.seriousTalk > 68) return "Фон выглядит относительно ровным; сложные темы лучше всё равно обсуждать спокойно и с согласием на разговор.";
   return "Ориентировочный фон ближе к нейтральному; реальные ощущения могут сильнее зависеть от сна, стресса и событий дня.";
 }
 
 function recommendationsFor(phase, metrics) {
+  if (phase === "unknown") return ["Ориентируйтесь на реальное самочувствие: календарь сейчас не может оценить фазу."];
   const recs = [];
   if (metrics.fatigue >= 72) {
     recs.push("Практично начать с бытовой помощи: еда, покупки, тишина, перенос необязательных дел.");
@@ -1001,12 +1115,12 @@ function explanationFor(phase, confidenceProfile, cycleStats, bleedStats, cycleC
     ? ` Для этого дня уже известна следующая фактическая менструация, поэтому участок считается фактическим циклом длиной ${cycleContext.length} дн., а не старым прогнозным перезапуском.`
     : "";
   const excluded = cycleStats.excludedIntervals
-    ? ` ${cycleStats.excludedIntervals} интервал(а) не участвует в среднем как слишком короткий, длинный или выброс.`
+    ? ` ${cycleStats.excludedIntervals} интервал(а) не участвует в типичной оценке как слишком короткий, длинный или выброс.`
     : "";
   const bleedSource = bleedStats.source === "history"
     ? `Типичная менструация ${bleedStats.length} дн. рассчитана по ${bleedStats.usedCount} последним датам окончания.`
     : `Типичная менструация ${bleedStats.length} дн. взята из настройки по умолчанию.`;
-  return `${cycleSource}${actualSpan}${excluded} ${bleedSource} Фертильное окно строится вокруг оценочной овуляции примерно за ${LUTEAL_PRIOR_DAYS} дней до следующей менструации; это не точный расчёт зачатия. Эмоциональные индексы используют плавные окна из модели: позднелютеиновый риск, перименструальный след, фолликулярное восстановление и фертильное окно. Уверенность индексов: ${confidenceText(confidenceProfile.emotional)}.`;
+  return `${cycleSource}${actualSpan}${excluded} ${bleedSource} Фертильное окно строится вокруг оценочной овуляции примерно за ${LUTEAL_PRIOR_DAYS} дней до следующей менструации; это не точный расчёт зачатия. Эмоциональные индексы используют плавные окна из модели: позднелютеиновый риск, перименструальный след, фолликулярное восстановление и фертильное окно. Даты не позволяют предсказать личное настроение, либидо или конфликтность. Индексы — общая иллюстративная модель, которая не обучается на вашем самочувствии.`;
 }
 
 function confidenceText(value) {
@@ -1023,7 +1137,8 @@ function shortPhase(phase) {
     ovulatory: "ферт.",
     early_luteal: "лют.",
     mid_luteal: "лют.",
-    late_luteal: "ПМС"
+    late_luteal: "ПМС",
+    unknown: "нет данных"
   };
   return map[phase];
 }
@@ -1140,11 +1255,37 @@ function monthTitle(value) {
 }
 
 function escapeHtml(value) {
-  return value.replace(/[&<>"']/g, (char) => ({
+  return String(value).replace(/[&<>"']/g, (char) => ({
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
     "\"": "&quot;",
     "'": "&#039;"
   })[char]);
+}
+
+function predictionText(model) {
+  if (model.cycleDay < 1) return "До первой записи: прогноз отсутствует.";
+  if (model.overdue) return `Расчётная дата ${formatDate(model.nextStartDate)} прошла. Новое начало не отмечено; цикл не перезапускается автоматически.`;
+  if (model.cycleContext.nextStartKnown) return `Следующая запись: ${formatDate(model.nextStartDate)}. Фазы между записями оценочные.`;
+  return `Следующая менструация: ~${formatDate(model.nextStartDate)} · ориентир ${formatDate(model.predictionRange.start)} — ${formatDate(model.predictionRange.end)}. Длительность ~${model.bleedStats.length} дн.`;
+}
+
+function shortRecommendation(model) {
+  if (model.unknown) return "Уточните записи в истории";
+  if (model.metrics.fatigue >= 72) return "Можно предложить помощь и отдых";
+  if (model.metrics.support >= 70) return "Спросите, какая поддержка нужна";
+  if (model.metrics.energy >= 72) return "Можно предложить прогулку";
+  return "Сверьтесь с реальным самочувствием";
+}
+
+function refreshCurrentDay() {
+  const today = toInputDate(new Date());
+  if (document.visibilityState !== "visible" || state.renderedDate === today) return;
+  state.renderedDate = today;
+  if (state.data.cycles.length) {
+    renderToday();
+    renderCalendar();
+    renderForecast();
+  }
 }
