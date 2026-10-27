@@ -1,84 +1,5 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const vm = require("node:vm");
-
-function loadModel(seedData = {}) {
-  const code = `${fs.readFileSync("app.js", "utf8")}
-globalThis.__model = {
-  state,
-  normalizeData,
-  buildDayModel,
-  getCycleStats,
-  getBleedStats,
-  getConfidenceProfile,
-  getCycleLength,
-  estimateOvulationDay,
-  cycleSignals,
-  rawMetrics,
-  normalizedMetricsForDay,
-  normalizeCycleInput,
-  parseDate,
-  addDays,
-  daysBetween,
-  upsertCycle
-};`;
-
-  const context = {
-    alert(message) {
-      throw new Error(message);
-    },
-    confirm() {
-      return true;
-    },
-    document: {
-      addEventListener() {},
-      getElementById() {
-        return null;
-      },
-      querySelectorAll() {
-        return [];
-      }
-    },
-    localStorage: {
-      getItem() {
-        return JSON.stringify(seedData);
-      },
-      setItem() {}
-    },
-    navigator: {},
-    window: {
-      addEventListener() {},
-      matchMedia() {
-        return { matches: false };
-      },
-      navigator: {}
-    }
-  };
-
-  vm.runInNewContext(code, context, { filename: "app.js" });
-  return context.__model;
-}
-
-function setData(model, data) {
-  model.state.data = model.normalizeData(data);
-}
-
-function datesFromIntervals(firstStart, intervals) {
-  const model = loadModel();
-  const starts = [firstStart];
-  let cursor = model.parseDate(firstStart);
-  intervals.forEach((interval) => {
-    cursor = model.addDays(cursor, interval);
-    starts.push(inputDate(cursor));
-  });
-  return starts;
-}
-
-function inputDate(date) {
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
+const {loadModel, setData, datesFromIntervals, inputDate} = require("./model-harness");
 
 function testOvulationIsSharedByPhaseAndSignals() {
   const model = loadModel();
@@ -131,7 +52,7 @@ function testCycleOutlierIsExcluded() {
   const stats = model.getCycleStats();
   assert.equal(stats.length, 28);
   assert.equal(stats.excludedIntervals, 1);
-  assert.equal(stats.intervals.find((record) => record.length === 40).reason, "статистический выброс");
+  assert.equal(stats.intervals.find((record) => record.length === 40).reason, "одиночный нетипичный интервал; проверьте пропуск записей");
 }
 
 function testBleedLengthLearnsFromEnds() {
@@ -146,7 +67,7 @@ function testBleedLengthLearnsFromEnds() {
   });
 
   const stats = model.getBleedStats();
-  assert.equal(stats.length, 5);
+  assert.equal(stats.length, 6);
   assert.equal(stats.sampleCount, 3);
   assert.equal(stats.source, "history");
 }
@@ -216,15 +137,15 @@ function testRepresentativeHistory() {
     {start: "2025-03-31"}, {start: "2025-04-28", end: "2025-05-04"}, {start: "2025-05-29"}
   ]});
   const stats = model.getCycleStats();
-  assert.equal(stats.length, 29);
+  assert.equal(stats.length, 30);
   assert.equal(stats.excludedIntervals, 1);
   assert.equal(stats.intervals[0].length, 60);
   assert.equal(model.getBleedStats().length, 7);
   const day = model.buildDayModel(model.parseDate("2025-05-30"));
   assert.equal(day.cycleDay, 2);
-  assert.equal(inputDate(day.nextStartDate), "2025-06-27");
-  assert.equal(inputDate(day.predictionRange.start), "2025-06-24");
-  assert.equal(inputDate(day.predictionRange.end), "2025-06-30");
+  assert.equal(inputDate(day.nextStartDate), "2025-06-28");
+  assert.equal(inputDate(day.predictionRange.start), "2025-06-25");
+  assert.equal(inputDate(day.predictionRange.end), "2025-07-01");
   assert.equal(day.isRecordedBleed, false);
   assert.equal(model.buildDayModel(model.parseDate("2025-05-29")).isRecordedBleed, true);
   assert.equal(model.buildDayModel(model.parseDate("2025-02-28")).phase, "unknown");
@@ -282,3 +203,99 @@ function testEditingCannotReplaceAnotherRecord() {
   assert.equal(model.state.data.cycles.length, 2);
 }
 testEditingCannotReplaceAnotherRecord();
+
+function testChangedRhythmAndLongCyclesAreLearned() {
+  for (const changed of [22,40,60]) {
+    const model = loadModel();
+    const starts = datesFromIntervals('2023-01-01',[28,28,28,28,28,28,changed,changed]);
+    setData(model,{cycles:starts.map(start=>({start}))});
+    const stats = model.getCycleStats();
+    assert.equal(stats.length,changed,`two consecutive ${changed}-day cycles must influence the new rhythm`);
+    assert.equal(stats.intervals.at(-1).valid,true);
+    assert.equal(stats.intervals.at(-2).valid,true);
+    if (changed === 60) assert.equal(model.buildDayModel(model.addDays(model.parseDate(starts.at(-1)),12)).phase,'unknown','Long-cycle timing is not evidence of an ovulatory phase');
+  }
+}
+
+function testRecentGapsCannotResurrectAncientHistory() {
+  const model = loadModel();
+  const starts = datesFromIntervals('2020-01-01',[25,25,25,25,25,100,100,100,100,100,100]);
+  setData(model,{cycles:starts.map(start=>({start})),settings:{cycleLength:31}});
+  const stats = model.getCycleStats();
+  assert.equal(stats.length,31);
+  assert.equal(stats.source,'default');
+  assert.equal(stats.usedIntervals,0);
+  assert.equal(stats.recentExcluded,6);
+}
+
+function testManualExclusionAndInclusiveDuration() {
+  const model = loadModel();
+  const starts = datesFromIntervals('2023-01-01',[28,28,50,50]);
+  setData(model,{cycles:starts.map((start,i)=>({start,excludeFromPrediction:i>=3})),settings:{cycleLength:30}});
+  assert.equal(model.getCycleStats().length,28);
+  assert.equal(model.getCycleStats().intervals.at(-1).valid,false);
+  assert.equal(model.state.data.cycles.at(-1).excludeFromPrediction,true,'Exclude flag survives normalization');
+  assert.equal(model.upsertCycle({start:starts.at(-1),end:inputDate(model.addDays(model.parseDate(starts.at(-1)),4)),excludeFromPrediction:true}),true);
+  assert.equal(model.getBleedStats().length,5);
+}
+
+function testBacktestUsesOnlyThePast() {
+  const model = loadModel();
+  const starts = datesFromIntervals('2023-01-01',[28,28,28,40]);
+  setData(model,{cycles:starts.map(start=>({start}))});
+  const audit = model.getForecastAudit();
+  assert.equal(audit.count,1);
+  assert.equal(audit.mae,12,'The unexpected fourth interval must be evaluated against the first three');
+  const stable = loadModel();
+  setData(stable,{cycles:datesFromIntervals('2023-01-01',[28,28,28,28,28,28]).map(start=>({start}))});
+  assert.equal(stable.getForecastAudit().mae,0);
+}
+
+function testPersonalObservationsNeedTwoPairedCycles() {
+  const model = loadModel();
+  const starts = datesFromIntervals('2023-01-01',[28,28]);
+  const observations = {};
+  for (let cycle=0;cycle<2;cycle++) {
+    for (const offset of [3,5,8,23,24,26]) {
+      observations[inputDate(model.addDays(model.parseDate(starts[cycle]),offset))] = {fatigue:offset>=23?4:0,pain:0};
+    }
+  }
+  setData(model,{cycles:starts.map(start=>({start})),observations});
+  const pattern = model.getPersonalPatterns().find(item=>item.key==='fatigue');
+  assert.equal(pattern.cycles,2);
+  assert.equal(pattern.before,4);
+  assert.equal(pattern.other,0);
+  assert.equal(model.getPersonalPatterns().find(item=>item.key==='pain').before,0,'A zero rating is real data');
+  model.state.data.observations[inputDate(model.addDays(model.parseDate(starts[1]),26))] = {};
+  assert.equal(model.getPersonalPatterns().length,0,'Two observed days in one window are insufficient');
+  const malformed = model.normalizeData({observations:{'2023-01-01':{mood:99,energy:'4',pain:0},'not-a-date':{mood:2}}});
+  assert.equal(Object.keys(malformed.observations).length,1);
+  assert.equal(malformed.observations['2023-01-01'].pain,0);
+  assert.equal(malformed.observations['2023-01-01'].mood,undefined);
+}
+
+function testOvulationUncertaintyNeverVanishes() {
+  const model = loadModel();
+  setData(model,{cycles:datesFromIntervals('2023-01-01',[28,28,28,28,28,28]).map(start=>({start}))});
+  const day = model.buildDayModel(model.parseDate('2023-01-10'));
+  assert.ok(day.fertileWindow.endDay-day.fertileWindow.startDay>=10,'Even a stable calendar does not establish exact ovulation');
+  assert.equal(day.confidenceProfile.emotional,0);
+  assert.ok(day.confidenceProfile.fertility<=30);
+}
+[testChangedRhythmAndLongCyclesAreLearned,testRecentGapsCannotResurrectAncientHistory,testManualExclusionAndInclusiveDuration,testBacktestUsesOnlyThePast,testPersonalObservationsNeedTwoPairedCycles,testOvulationUncertaintyNeverVanishes].forEach(test=>test());
+console.log('adaptation, missingness, historical validation and personal diary tests passed');
+
+function testPersonalPatternsCompareWithinCycles() {
+  const model = loadModel();
+  const starts = datesFromIntervals('2023-01-01',[28,28]);
+  const observations = {};
+  for (let offset=1;offset<=20;offset++) observations[inputDate(model.addDays(model.parseDate(starts[0]),offset))] = {mood:0};
+  for (const offset of [23,24,25]) observations[inputDate(model.addDays(model.parseDate(starts[0]),offset))] = {mood:1};
+  for (const offset of [1,2,3]) observations[inputDate(model.addDays(model.parseDate(starts[1]),offset))] = {mood:3};
+  for (const offset of [23,24,25,26,27]) observations[inputDate(model.addDays(model.parseDate(starts[1]),offset))] = {mood:4};
+  setData(model,{cycles:starts.map(start=>({start})),observations});
+  const pattern = model.getPersonalPatterns().find(p=>p.key==='mood');
+  assert.equal(pattern.before-pattern.other,1,'Unequal logging density must not turn a one-point within-cycle change into a larger effect');
+  assert.equal(pattern.count,31);
+}
+testPersonalPatternsCompareWithinCycles();

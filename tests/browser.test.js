@@ -2,118 +2,150 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const http = require('node:http');
 const { execFileSync } = require('node:child_process');
-const { chromium } = require('playwright');
-
-const shellFiles = ['index.html', 'app.js', 'styles.css', 'service-worker.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
-const oldFiles = Object.fromEntries(shellFiles.map(name => [name, execFileSync('git', ['show', `919f33f:${name}`])]));
-const mime = { html: 'text/html', js: 'text/javascript', css: 'text/css', webmanifest: 'application/manifest+json', svg: 'image/svg+xml', png: 'image/png' };
-let oldRelease = false;
-let nextRelease = false;
+const { chromium, webkit, firefox } = require('playwright');
+const version = 'v24', nextVersion = 'v25';
+const files = ['index.html', 'app.js', 'styles.css', 'service-worker.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const prior = Object.fromEntries(['v22', 'v23'].map((v, index) => [v, Object.fromEntries(files.map(name => [name, execFileSync('git', ['show', `${index ? '1cd16a0' : '919f33f'}:${name}`])]))]));
+const mime = {html:'text/html',js:'text/javascript',css:'text/css',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
+let release = version;
 const server = http.createServer((req, res) => {
-  const url = new URL(req.url, 'http://localhost');
-  const name = url.pathname.replace(/^\/bleed-cycle\//, '') || 'index.html';
-  if (!shellFiles.includes(name)) { res.writeHead(404); res.end(); return; }
-  res.writeHead(200, { 'Content-Type': mime[name.split('.').pop()], 'Cache-Control': 'no-store' });
-  let body = oldRelease ? oldFiles[name] : fs.readFileSync(name);
-  if (nextRelease && ['index.html', 'app.js', 'service-worker.js'].includes(name)) body = Buffer.from(body.toString().replaceAll('v23', 'v24').replaceAll('v=23', 'v=24'));
+  const name = new URL(req.url, 'http://localhost').pathname.replace(/^\/bleed-cycle\//, '') || 'index.html';
+  if (!files.includes(name)) { res.writeHead(404); return res.end(); }
+  let body = prior[release]?.[name] || fs.readFileSync(name);
+  if (release === nextVersion && ['index.html','app.js','service-worker.js'].includes(name)) body = Buffer.from(body.toString().replaceAll(version, nextVersion).replaceAll('v=24', 'v=25'));
+  res.writeHead(200, {'Content-Type': mime[name.split('.').pop()], 'Cache-Control': 'no-store'});
   res.end(body);
 });
-const fixture = fs.readFileSync(process.env.PRIVATE_BACKUP || '/dev/null', 'utf8') || JSON.stringify({
-  version: 1,
-  cycles: [{ start: '2026-01-01', end: '2026-01-05' }, { start: '2026-10-26' }],
-  settings: {cycleLength: 28, bleedLength: 5}, notes: {}
-});
-const expectedCycles = JSON.parse(fixture).cycles.length;
+const fixture = fs.readFileSync(process.env.PRIVATE_BACKUP || '/dev/null', 'utf8') || JSON.stringify({version:1, cycles:[
+  {start:'2026-08-30',end:'2026-09-03'}, {start:'2026-09-28',end:'2026-10-02'}, {start:'2026-10-26'}
+], settings:{cycleLength:28,bleedLength:5},notes:{}});
+const browserType = process.env.BROWSER === 'firefox' ? firefox : process.env.BROWSER === 'webkit' ? webkit : chromium;
+const screenshot = (page, name, fullPage = true) => page.screenshot({path:`/tmp/bleed-${process.env.BROWSER ? process.env.BROWSER + "-" : ""}${name}.png`,fullPage,animations:'disabled'});
+const count = JSON.parse(fixture).cycles.length;
 
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const url = `http://127.0.0.1:${server.address().port}/bleed-cycle/`;
-  const browser = await chromium.launch({ headless: true });
+  const browser = await browserType.launch({headless:true});
   try {
-    const context = await browser.newContext({ viewport: {width: 390, height: 844}, timezoneId: 'Europe/Tallinn' });
-    const page = await context.newPage();
-    await page.clock.install({time: new Date('2026-10-27T10:00:00+02:00')});
-    const errors = [];
-    page.on('pageerror', error => { errors.push(error.message); console.error('Browser error:', error.message); });
+    const context = await browser.newContext({viewport:{width:390,height:844},timezoneId:'Europe/Tallinn',...(browserType===chromium?{isMobile:true,hasTouch:true,deviceScaleFactor:2}:{})});
+    const page = await context.newPage(), errors = [];
+    page.on('pageerror', error => errors.push(error.message));
     page.on('dialog', dialog => dialog.accept());
+    await page.clock.install({time:new Date('2026-10-27T10:00:00+02:00')});
     await page.goto(url);
-    await page.locator('#importWelcome').setInputFiles({name: 'history.json', mimeType: 'application/json', buffer: Buffer.from(fixture)});
-    await page.locator('#dashboard:not(.hidden)').waitFor();
-    assert.equal(await page.locator('.day-cell').count(), 42);
-    assert.ok((await page.locator('#todayCard').innerText()).includes('День 2'));
-    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('bleed-cycle-pwa-v1')).cycles.length), expectedCycles);
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    await page.locator('#quickEndButton').click();
-    await page.locator('#newCycleEnd').fill('2026-10-27');
-    await page.locator('#newCycleSubmit').click();
-    await page.locator('.day-cell.today').click();
+    await page.locator('#onboarding:not(.hidden)').waitFor();
+    await screenshot(page, 'v24-onboarding-390');
+    await page.locator('#importWelcome').setInputFiles({name:'history.json',mimeType:'application/json',buffer:Buffer.from(fixture)});
+    await page.locator('.day-cell').first().waitFor();
+    assert.equal(await page.locator('.day-cell').count(),35,'October 2026 needs five rows');
+    assert.equal(await page.evaluate(() => JSON.parse(localStorage.getItem('bleed-cycle-pwa-v1')).cycles.length),count);
+    for (const [width,height] of [[390,844],[320,740],[360,780],[430,932]]) {
+      await page.setViewportSize({width,height});
+      await page.clock.runFor(4000);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,`${width}px must not scroll horizontally`);
+      const layout = await page.evaluate(() => ({calendarBottom:document.getElementById('calendarGrid').getBoundingClientRect().bottom,navTop:document.querySelector('.tabs').getBoundingClientRect().top}));
+      assert.ok(layout.calendarBottom <= layout.navTop,`Calendar cells must be visible above bottom nav at ${width}px`);
+      await screenshot(page,`v24-home-${width}`);
+    }
+    await page.setViewportSize({width:390,height:844});
+    await page.locator('#nextMonth').click();
+    assert.equal(await page.locator('.day-cell').count(),42,'November 2026 needs six rows');
+    await page.locator('#todayButton').click();
+    await page.locator('#calendarGrid').dispatchEvent('pointerdown',{clientX:280,clientY:350,pointerType:'touch'});
+    await page.locator('#calendarGrid').dispatchEvent('pointerup',{clientX:100,clientY:355,pointerType:'touch'});
+    assert.match(await page.locator('#monthTitle').innerText(),/ноябрь/i);
+    await page.clock.runFor(300);
+    await page.locator('#todayButton').click();
+    await page.locator('.day-cell.today').focus();
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await page.evaluate(() => document.activeElement.dataset.date),'2026-10-28');
+    if (browserType===chromium) await page.locator('#diaryTodayButton').tap();
+    else await page.locator('#diaryTodayButton').click();
+    await screenshot(page,'v24-diary',false);
+    assert.equal(await page.evaluate(() => document.querySelector('main').inert),true);
+    assert.equal(await page.locator('.metric').count(),0,'Generic model is opt-in');
+    await page.locator('#diary_mood').selectOption('3');
+    await page.locator('#diary_energy').selectOption('2');
+    await page.locator('#diary_pain').selectOption('0');
     await page.locator('#dayNote').fill('Сегодня лучше. <script>test</script>');
     await page.locator('#saveDayNote').click();
-    assert.match(await page.locator('#noteStatus').innerText(), /сохранена/);
+    assert.match(await page.locator('#noteStatus').innerText(),/Сохранено/);
     await page.keyboard.press('Escape');
     await page.locator('.day-cell.today').click();
-    assert.equal(await page.locator('#dayNote').inputValue(), 'Сегодня лучше. <script>test</script>');
-    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#dayNote').inputValue(),'Сегодня лучше. <script>test</script>');
+    assert.equal(await page.locator('#diary_pain').inputValue(),'0','Zero is a valid observation, not missing data');
+    await page.goBack();
+    await page.locator('#daySheet:not(.open)').waitFor({state:'attached'});
+    assert.equal(await page.evaluate(() => document.querySelector('main').inert),false);
+    await page.locator('#quickEndButton').click();
+    assert.equal(await page.locator('#newCycleEnd').inputValue(),'2026-10-27');
+    await page.locator('#newCycleSubmit').click();
+    await page.locator('[data-view="history"]').click();
+    await page.clock.runFor(4000);
+    await screenshot(page,'v24-history-390');
+    assert.match(await page.locator('#personalPatterns').innerText(),/Дней с оценками самочувствия: 1/);
     await page.locator('[data-view="settings"]').click();
+    await screenshot(page,'v24-settings-390');
+    const snapshot = await page.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1'));
+    const invalidDialog = page.waitForEvent('dialog');
+    await page.locator('#importInput').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"version":1,"cycles":[{"start":"not-a-date"}]}')});
+    assert.match((await invalidDialog).message(),/Не удалось импортировать/);
+    assert.equal(await page.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')),snapshot,'A bad import must not replace existing data');
     await page.locator('#settingDetail').selectOption('short');
+    await page.locator('#settingModel').check();
     await page.locator('#settingsForm button[type="submit"]').click();
     await page.locator('[data-view="calendar"]').click();
     await page.locator('.day-cell.today').click();
-    assert.equal(await page.locator('.metric').count(), 4);
+    await page.locator('details').filter({has:page.getByText('Иллюстративная модель',{exact:true})}).locator('summary').click();
+    assert.equal(await page.locator('.metric').count(),4);
     await page.keyboard.press('Escape');
-    await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+    await page.locator('#privacyLockButton').click();
+    await page.locator('#privacyScreen:not([hidden])').waitFor();
+    assert.equal(await page.locator('#dashboard').isVisible(),false,'Privacy hides content, not only colors');
+    await page.locator('#unlockButton').click();
+    await page.locator('#privacyScreen[hidden]').waitFor({state:'attached'});
     await page.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-    await context.setOffline(true);
-    await page.reload();
+    await context.setOffline(true); await page.reload();
     await page.locator('.day-cell').first().waitFor();
-    assert.equal(await page.locator('.day-cell').count(), 42);
+    assert.equal(await page.locator('.day-cell').count(),35);
     await context.setOffline(false);
-    await page.setViewportSize({width: 320, height: 740});
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false);
-    await page.screenshot({path: '/tmp/bleed-v23-mobile.png', fullPage: true});
-    // Future updates must not discard an open form.
-    await page.locator('.day-cell.today').click();
-    await page.locator('#dayNote').fill('Unsaved form survives an update');
-    nextRelease = true;
-    await page.evaluate(async () => { const r = await navigator.serviceWorker.getRegistration(); await r.update(); });
-    await page.waitForFunction(async () => (await caches.keys()).includes('bleed-cycle-pwa-v24'));
-    await page.locator('#updateButton:not(.hidden-install)').waitFor();
-    assert.equal(await page.locator('#dayNote').inputValue(), 'Unsaved form survives an update');
-    assert.equal(await page.locator('script[src="app.js?v=23"]').count(), 1);
-    await page.locator('#saveDayNote').click();
-    await page.keyboard.press('Escape');
+    await page.locator('#diaryTodayButton').click();
+    await page.locator('#dayNote').fill('Unsaved text survives an update');
+    release = nextVersion;
+    await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+    await page.waitForFunction(async () => (await caches.keys()).includes('bleed-cycle-pwa-v25'));
+    await page.locator('#updateButton:not(.hidden-install)').waitFor({state:'attached'});
+    assert.equal(await page.locator('#dayNote').inputValue(),'Unsaved text survives an update');
+    assert.equal(await page.locator('script[src="app.js?v=24"]').count(),1);
+    await page.locator('#saveDayNote').click(); await page.keyboard.press('Escape');
     await page.locator('#updateButton').click();
-    await page.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=24"]')));
+    await page.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=25"]')));
     await page.locator('.day-cell').first().waitFor();
-    assert.match(await page.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')), /Unsaved form survives an update/);
-    nextRelease = false;
-    assert.deepEqual(errors, []);
+    assert.match(await page.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')),/Unsaved text survives an update/);
+    assert.deepEqual(errors,[]);
     await context.close();
 
-    // A real v22 installation must upgrade, keep the backup, and launch offline.
-    oldRelease = true;
-    const legacy = await browser.newContext();
-    const upgradePage = await legacy.newPage();
-    await upgradePage.goto(url);
-    await upgradePage.evaluate(async fixture => {
-      localStorage.setItem('bleed-cycle-pwa-v1', fixture);
-      await navigator.serviceWorker.ready;
-    }, fixture);
-    await upgradePage.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
-    await upgradePage.reload();
-    oldRelease = false;
-    await upgradePage.evaluate(async () => { const registration = await navigator.serviceWorker.getRegistration(); await registration.update(); });
-    await upgradePage.waitForFunction(() => document.querySelector('script[src="app.js?v=23"]'), {timeout: 20000});
-    await upgradePage.locator('.day-cell').first().waitFor();
-    assert.equal(await upgradePage.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')), fixture);
-    assert.equal(await upgradePage.evaluate(() => caches.keys()).then(keys => keys.includes('bleed-cycle-pwa-v22')), false);
-    await legacy.setOffline(true);
-    await upgradePage.reload();
-    assert.equal(await upgradePage.locator('.day-cell').count(), 42);
-    await legacy.close();
-    console.log('mobile UI, import, editing, notes, settings, offline and v22 → v23 update passed');
-  } finally {
-    await browser.close();
-    await new Promise(resolve => server.close(resolve));
-  }
-})().catch(error => { console.error(error); server.close(); process.exitCode = 1; });
+    if (browserType === chromium) for (const old of ['v22','v23']) {
+      release = old;
+      const legacy = await browser.newContext({viewport:{width:390,height:844}});
+      const oldPage = await legacy.newPage();
+      await oldPage.clock.install({time:new Date('2026-10-27T10:00:00+02:00')});
+      await oldPage.goto(url);
+      await oldPage.evaluate(async data => {localStorage.setItem('bleed-cycle-pwa-v1',data);await navigator.serviceWorker.ready;},fixture);
+      await oldPage.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
+      await oldPage.reload();
+      if (old === 'v23') await screenshot(oldPage,'v23-before-390');
+      release = version;
+      await oldPage.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
+      await oldPage.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=24"]')));
+      await oldPage.locator('.day-cell').first().waitFor();
+      assert.equal(await oldPage.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')),fixture);
+      await legacy.setOffline(true);await oldPage.reload();
+      await oldPage.locator('.day-cell').first().waitFor();
+      assert.equal(await oldPage.locator('.day-cell').count(),35);
+      await legacy.close();
+    }
+    console.log(`${process.env.BROWSER || 'chromium'}: four mobile sizes, diary, history, settings, privacy, Android back, offline, form protection and upgrade passed`);
+  } finally {await browser.close();await new Promise(resolve => server.close(resolve));}
+})().catch(error => {console.error(error);server.close();process.exitCode=1;});

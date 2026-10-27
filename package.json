@@ -1,6 +1,6 @@
 {
   "name": "bleed-cycle",
-  "version": "23.0.0",
+  "version": "24.0.0",
   "private": true,
   "scripts": {
     "test": "node tests/model.test.js && node tests/service-worker.test.js",
