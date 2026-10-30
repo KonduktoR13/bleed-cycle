@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#f6f5f1">
-  <meta name="description" content="Личный календарь цикла и дневник самочувствия. Данные остаются на устройстве.">
+  <meta name="description" content="Модель эмоционального фона жены и подсказки по общению для мужа. Всё хранится на устройстве.">
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="icon-192.png">
-  <link rel="stylesheet" href="styles.css?v=24">
+  <link rel="stylesheet" href="styles.css?v=25">
   <title>Тихий цикл</title>
 </head>
 <body data-view="calendar">
@@ -23,7 +23,7 @@
     </header>
     <main>
       <section id="onboarding" class="onboarding hidden" aria-labelledby="onboardingTitle">
-        <div class="intro-panel"><p class="eyebrow">Знакомство с вашим ритмом</p><h2 id="onboardingTitle">Начнём с одной даты</h2><p>Укажите начало последней менструации. История и заметки останутся на этом устройстве.</p></div>
+        <div class="intro-panel"><p class="eyebrow">Чтобы лучше понимать её ритм</p><h2 id="onboardingTitle">Ориентиры для заботы и общения</h2><p>Укажите начало последней менструации жены. Приложение покажет модель чувствительности, энергии, общения и поддержки по дням цикла. Данные останутся на устройстве.</p></div>
         <form id="cycleForm" class="setup-form">
           <label>Начало менструации<input id="startDateInput" name="startDate" type="date" required></label>
           <label>Окончание, если известно<input id="endDateInput" name="endDate" type="date"></label>
@@ -35,11 +35,10 @@
       </section>
       <section id="dashboard" class="dashboard hidden">
         <div class="calendar-home">
-          <section class="today-card" id="todayCard" aria-label="Сегодня и ближайшая менструация"></section>
+          <section class="today-card" id="todayCard" aria-label="Модель эмоционального фона сегодня"></section>
           <div class="quick-actions">
-            <button class="primary-button" id="diaryTodayButton" type="button">Самочувствие</button>
-            <button class="secondary-button" id="quickStartButton" type="button">Начало</button>
-            <button class="secondary-button" id="quickEndButton" type="button">Окончание</button>
+            <button class="primary-button" id="diaryTodayButton" type="button">Прогноз дня</button>
+            <button class="secondary-button" id="notesTodayButton" type="button">＋ Заметка</button>
           </div>
         </div>
         <section id="calendarView" class="view active" aria-label="Календарь">
@@ -54,16 +53,18 @@
             </div>
             <div class="weekdays" aria-hidden="true"><span>Пн</span><span>Вт</span><span>Ср</span><span>Чт</span><span>Пт</span><span>Сб</span><span>Вс</span></div>
             <div class="calendar-grid" id="calendarGrid" aria-label="Дни месяца"></div>
-            <div class="calendar-key"><span><i class="key-dot recorded"></i>Запись</span><span><i class="key-dot predicted"></i>Прогноз</span><span><i class="key-dot note"></i>Дневник</span></div>
-            <details class="calendar-explanation"><summary>Обозначения и фазы</summary><div class="legend" id="legend"></div><p>Нажмите на дату, чтобы внести самочувствие или менструацию. Фазы рассчитаны по календарю; овуляция не подтверждена.</p><p>Пунктир — только предполагаемое кровотечение. Вне отмеченного кровотечения отсутствие значка не подтверждает отсутствие менструации.</p></details>
+            <div class="load-key"><span>Нагрузка модели</span><i></i><span>ниже → выше</span></div>
+            <div class="calendar-key"><span><i class="key-dot recorded"></i>Запись</span><span><i class="key-dot predicted"></i>Прогноз</span><span><i class="key-dot note"></i>Заметка</span></div>
+            <details class="calendar-explanation"><summary>Как читать цвета</summary><div class="legend" id="legend"></div><p>Нажмите на дату, чтобы увидеть stats и подсказки по общению. Фазы рассчитаны по календарю; овуляция не подтверждена.</p><p>Пунктир — только предполагаемое кровотечение. Вне отмеченного кровотечения отсутствие значка не подтверждает отсутствие менструации.</p></details>
           </section>
-          <details class="forecast-section"><summary>Ближайшие 5 дней<span class="summary-hint">оценка по датам</span></summary><section class="forecast-list" id="forecastList" aria-label="Ближайшие дни"></section></details>
+          <details class="forecast-section"><summary>Ближайшие 5 дней<span class="summary-hint">общение и поддержка</span></summary><section class="forecast-list" id="forecastList" aria-label="Ближайшие дни"></section></details>
           <details class="model-explanation"><summary>Как подстраивается прогноз<span class="summary-hint" id="sampleHint"></span></summary><div id="modelInfo"></div></details>
         </section>
         <section id="historyView" class="view" aria-labelledby="historyTitle">
           <div class="section-head"><div><p class="eyebrow">Ваши записи</p><h2 id="historyTitle">История цикла</h2></div><button class="primary-button" id="addCycleButton" type="button">＋ Добавить</button></div>
           <div id="historyStats" class="history-stats"></div>
-          <details class="personal-patterns" open><summary>Самочувствие и закономерности</summary><div id="personalPatterns"></div></details>
+          <div class="cycle-quick-actions"><button class="secondary-button" id="quickStartButton" type="button">Отметить начало</button><button class="secondary-button" id="quickEndButton" type="button">Отметить окончание</button></div>
+          <details class="personal-patterns" open><summary>Личный профиль и наблюдения</summary><div id="personalPatterns"></div></details>
           <div id="historyList" class="history-list"></div>
         </section>
         <section id="settingsView" class="view" aria-labelledby="settingsTitle">
@@ -74,7 +75,7 @@
             <label>Подробность объяснений<select id="settingDetail"><option value="balanced">Обычная</option><option value="short">Краткая</option><option value="full">Подробная</option></select></label>
             <label>Оформление<select id="settingTheme"><option value="soft">Мягкое</option><option value="contrast">Контрастное</option></select></label>
             <label class="toggle-row"><input id="settingFertility" type="checkbox"><span>Оценочное фертильное окно<small>Расширенный календарный ориентир. Не определяет «безопасные дни».</small></span></label>
-            <label class="toggle-row"><input id="settingModel" type="checkbox"><span>Иллюстративные шкалы<small>Общая модель в деталях дня. Не прогноз личного настроения, либидо или поведения.</small></span></label>
+            <label class="toggle-row"><input id="settingPersonal" type="checkbox"><span>Учитывать личные наблюдения<small>Поправки к модели после достаточного числа записей в похожие дни. Её оценки и ваши наблюдения не смешиваются.</small></span></label>
             <label class="toggle-row"><input id="settingPrivate" type="checkbox"><span>Скрывать личные данные<small>Закрывает содержимое экрана без шифрования данных.</small></span></label>
             <button class="primary-button" type="submit">Сохранить настройки</button>
           </form>
@@ -82,12 +83,15 @@
         </section>
         <section id="helpView" class="view" aria-labelledby="helpTitle">
           <p class="eyebrow">Понятно о цикле</p><h2 id="helpTitle">Как это работает</h2>
-          <details class="info-block" open><summary>Что приложение действительно знает</summary><p>Записанное начало — первый день цикла. Записанное окончание включается в длительность кровотечения. Приложение уточняет типичную длину цикла по последним шести интервалам и показывает диапазон дат, а не обещание точного дня.</p><p>Длинный промежуток может быть как особенностью цикла, так и пропуском записей. Приложение не вставляет несуществующие менструации. При редактировании можно исключить предыдущий интервал из прогноза.</p></details>
+          <details class="info-block" open><summary>Модель для мужа</summary><p>Главный экран показывает расчётный эмоциональный фон: чувствительность, энергию, раздражительность, поддержку и другие показатели. Цвет календаря отражает суммарную нагрузку; карточка дня предлагает подход к общению.</p><p>Это общая модель по исходной исследовательской сводке проекта. Индексы 0–100 — относительные ориентиры, а не измерение состояния жены и не вероятность поведения. Исследования задают направления и окна изменений; точные коэффициенты являются инженерным выбором приложения.</p></details>
+          <details class="info-block"><summary>Что уточняет история цикла</summary><p>Записанное начало — первый день цикла. Записанное окончание включается в длительность кровотечения. Приложение уточняет типичную длину цикла по последним шести интервалам и показывает диапазон дат, а не обещание точного дня.</p><p>Длинный промежуток может быть как особенностью цикла, так и пропуском записей. Приложение не вставляет несуществующие менструации. При редактировании можно исключить предыдущий интервал из прогноза.</p></details>
           <details class="info-block"><summary>Как прогноз учится на истории</summary><p>Новые интервалы получают больший вес. Одиночный нетипичный промежуток может не участвовать в расчёте; несколько последовательных похожих изменений учитываются как новый ритм. Пределы модели 15–90 дней — технический диапазон, а не медицинская норма.</p><p>Разброс и небольшое число записей расширяют диапазон дат. После накопления истории приложение проверяет прошлые прогнозы, используя только данные, известные до каждого следующего начала. Ошибка прошлых прогнозов может расширить диапазон. Это локальная эвристика, не клинически проверенная вероятность.</p></details>
           <details class="info-block"><summary>Овуляция и гормоны</summary><p>По одним менструациям нельзя подтвердить овуляцию или измерить гормоны. Ориентир около 14 дней до следующего начала используется только для условных фаз. Период возможной овуляции расширяется с учётом разброса дат и вариабельности лютеиновой фазы.</p><p>Календарь не предназначен для контрацепции и не определяет безопасные дни. При гормональной контрацепции, беременности и после родов фазовая модель может быть неприменима.</p><p><a href="https://doi.org/10.1038/s41746-019-0152-7" target="_blank" rel="noopener noreferrer">Исследование более 600 тысяч циклов</a> · <a href="https://pubmed.ncbi.nlm.nih.gov/11082086/" target="_blank" rel="noopener noreferrer">Исследование вариабельности фертильного окна</a></p></details>
-          <details class="info-block"><summary>Настроение и самочувствие</summary><p>Личное настроение, либидо и поведение нельзя достоверно вычислить по дате цикла. Записывайте ощущения в дневнике. Общие иллюстративные шкалы доступны по желанию в настройках и не обучаются на ваших оценках.</p><p>В истории можно увидеть описательное сравнение самочувствия в последние пять дней перед записанной менструацией и в другие дни. Для сравнения берутся последние шесть завершённых циклов с равным весом для каждого. Оно появляется после двух завершённых циклов, в каждом из которых есть не менее трёх оценок в обоих окнах. Это ваши прошлые наблюдения, а не диагноз или прогноз.</p><p><a href="https://pubmed.ncbi.nlm.nih.gov/40976232/" target="_blank" rel="noopener noreferrer">Исследование настроения и фаз цикла, 2025</a> · <a href="https://www.rcog.org.uk/for-the-public/browse-our-patient-information/managing-premenstrual-syndrome-pms/" target="_blank" rel="noopener noreferrer">RCOG о дневнике симптомов</a></p></details>
+          <details class="info-block"><summary>Настроение и самочувствие</summary><p>В крупных ежедневных наблюдениях есть циклические изменения настроения и энергии. Другие исследования находят небольшие или неоднородные эффекты. Поэтому модель остаётся ориентиром, а личные записи помогают проверить, что характерно именно для вашей жены.</p><p>В истории можно увидеть описательное сравнение самочувствия в последние пять дней перед записанной менструацией и в другие дни. Для сравнения берутся последние шесть завершённых циклов с равным весом для каждого. Оно появляется после двух завершённых циклов, в каждом из которых есть не менее трёх оценок в обоих окнах. Это ваши прошлые наблюдения, а не диагноз или прогноз.</p><p><a href="https://pubmed.ncbi.nlm.nih.gov/40976232/" target="_blank" rel="noopener noreferrer">Исследование настроения и фаз цикла, 2025</a> · <a href="https://www.rcog.org.uk/for-the-public/browse-our-patient-information/managing-premenstrual-syndrome-pms/" target="_blank" rel="noopener noreferrer">RCOG о дневнике симптомов</a></p></details>
+          <details class="info-block"><summary>Личные stats: что уже учитывается</summary><p>Указывайте источник оценки: со слов жены или ваше наблюдение. Поправка для показателя появляется после как минимум шести оценок в похожие дни как минимум двух завершённых циклов, с двумя оценками в каждом. Используются только предыдущие завершённые циклы, без записи прогнозируемого дня.</p><p>Каждый цикл имеет равный вес. Источники оценок не смешиваются; при достаточных данных предпочтение отдаётся её словам. Личная поправка постепенно смешивается с общим шаблоном; она не является клинически проверенной моделью поведения.</p></details>
+          <details class="info-block"><summary>Научные основания показателей</summary><p>Чувствительность, раздражительность, тревожность и усталость связаны с описанными в исследованиях симптомными окнами. Энергия, общительность и либидо имеют более вариабельные связи. Поддержка, напряжение в общении и ресурс для разговоров — практические производные, а не доказанные вероятности.</p><p><a href="https://pubmed.ncbi.nlm.nih.gov/33526880/" target="_blank" rel="noopener noreferrer">Pierson et al., 2021</a> · <a href="https://pubmed.ncbi.nlm.nih.gov/39917827/" target="_blank" rel="noopener noreferrer">Doornweerd &amp; Gerritsen, 2025</a> · <a href="https://pubmed.ncbi.nlm.nih.gov/37037659/" target="_blank" rel="noopener noreferrer">Kiesner et al., либидо</a> · <a href="https://pubmed.ncbi.nlm.nih.gov/31628974/" target="_blank" rel="noopener noreferrer">Динамика отношений</a></p></details>
           <details class="info-block"><summary>Когда нужна медицинская помощь</summary><p>При заметном изменении привычного цикла, кровотечениях между менструациями, сильной боли или выраженных симптомах, мешающих обычной жизни, обсудите записи с врачом. Приложение не ставит диагнозы.</p></details>
-          <details class="info-block"><summary>Приватность и обновления</summary><p>История и дневник хранятся в браузере этого устройства. Здесь нет аналитики и отправки записей на сервер. Приватный режим скрывает экран от постороннего взгляда, но не шифрует хранилище.</p><p>Версия v24. Обновления загружаются при подключении к интернету. Открытая форма сохраняет введённый текст до ручного обновления. Переустановка не требуется.</p></details>
+          <details class="info-block"><summary>Приватность и обновления</summary><p>История и дневник хранятся в браузере этого устройства. Здесь нет аналитики и отправки записей на сервер. Приватный режим скрывает экран от постороннего взгляда, но не шифрует хранилище.</p><p>Версия v25. Обновления загружаются при подключении к интернету. Открытая форма сохраняет введённый текст до ручного обновления. Переустановка не требуется.</p></details>
         </section>
         <nav class="tabs" aria-label="Основные разделы">
           <button class="tab active" data-view="calendar" aria-current="page" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 3v4m8-4v4M4 11h16m-11 4h2"/></svg><span>Календарь</span></button>
@@ -102,6 +106,6 @@
     <div id="privacyScreen" class="privacy-screen" hidden><span class="brand-mark" aria-hidden="true">◔</span><h2>Личный календарь скрыт</h2><p>Данные остаются на устройстве</p><button class="primary-button" id="unlockButton" type="button">Показать календарь</button></div>
   </div>
   <template id="addCycleTemplate"><form class="setup-form compact" id="newCycleForm"><label>Первый день менструации<input id="newCycleStart" type="date" required></label><label>Последний день, если известен<input id="newCycleEnd" type="date"></label><label>Заметка<textarea id="newCycleNote" rows="2"></textarea></label><label class="toggle-row"><input id="excludeInterval" type="checkbox"><span>Не учитывать предыдущий интервал<small>Если между началами пропущены записи или это особый цикл.</small></span></label><button class="primary-button" id="newCycleSubmit" type="submit">Сохранить</button></form></template>
-  <script src="app.js?v=24" defer></script>
+  <script src="app.js?v=25" defer></script>
 </body>
 </html>

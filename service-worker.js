@@ -1,8 +1,8 @@
-const CACHE_NAME = "bleed-cycle-pwa-v24";
+const CACHE_NAME = "bleed-cycle-pwa-v25";
 const CACHE_PREFIX = "bleed-cycle-pwa-";
 const APP_SHELL = "./index.html";
 const ASSETS = [
-  "./", APP_SHELL, "./styles.css?v=24", "./app.js?v=24",
+  "./", APP_SHELL, "./styles.css?v=25", "./app.js?v=25",
   "./manifest.webmanifest", "./icon.svg", "./icon-192.png", "./icon-512.png"
 ];
 
