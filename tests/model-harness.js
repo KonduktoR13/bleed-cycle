@@ -22,7 +22,9 @@ globalThis.__model = {
   daysBetween,
   upsertCycle,
   getForecastAudit: typeof getForecastAudit === "function" ? getForecastAudit : null,
-  getPersonalPatterns: typeof getPersonalPatterns === "function" ? getPersonalPatterns : null
+  getPersonalPatterns: typeof getPersonalPatterns === "function" ? getPersonalPatterns : null,
+  communicationProfile: typeof communicationProfile === "function" ? communicationProfile : null,
+  getPersonalMetricEstimates: typeof getPersonalMetricEstimates === "function" ? getPersonalMetricEstimates : null
 };`;
 
   const context = {

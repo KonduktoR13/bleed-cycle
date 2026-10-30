@@ -57,8 +57,8 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .day-cell.outside { opacity: .4; }
 .day-cell.today { border: 2px solid var(--teal); }
 .day-cell.today strong { color: var(--teal); font-weight: 800; }
-.day-cell.recorded-bleed { background: #f5ddd6 !important; }
-.day-cell.predicted { background: #fbf1ed !important; border: 1px dashed #d5a599; }
+.day-cell.recorded-bleed { border-color: #cc8d7a; }
+.day-cell.predicted { border: 1px dashed #d5a599; }
 .day-markers { height: 5px; display: flex; align-items: center; justify-content: center; gap: 3px; }
 .marker, .note-marker, .key-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; background: #c26b59; }
 .marker.fertile { background: #c09b53; border-radius: 1px; transform: rotate(45deg); }
@@ -162,3 +162,63 @@ button:disabled { opacity: .45; cursor: default; }
 .day-cell.today { border: 2px solid var(--teal); }
 .day-cell.today strong { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; background: var(--teal); color: white; }
 .calendar-grid { touch-action: pan-y; }
+
+/* The partner-oriented model is the primary view. Cycle dates remain supporting data. */
+.model-overview { display: flex; gap: 13px; align-items: center; }
+.model-ring { flex: 0 0 70px; width: 70px; height: 70px; border-radius: 50%; padding: 5px; background: conic-gradient(var(--score-color) calc(var(--score)*1%), #dce4d7 0); }
+.model-ring > div { height: 100%; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-direction: column; background: #eef2e7; }
+.model-ring strong { font-size: 26px; line-height: 1.05; letter-spacing: -.7px; }
+.model-ring span { font-size: 9px; color: var(--muted); }
+.model-lead { min-width: 0; }
+.model-lead h2 { font-size: 18px; line-height: 1.2; }
+.model-lead p { font-size: 12px; color: var(--muted); margin-top: 5px; line-height: 1.35; }
+.model-glance { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 12px; }
+.model-glance > div { display: grid; grid-template-columns: 1fr auto; gap: 4px; align-items: center; }
+.model-glance span { font-size: 10px; color: var(--muted); white-space: nowrap; }
+.model-glance strong { font-size: 12px; }
+.model-glance i { display: block; grid-column: 1/-1; height: 3px; background: #d9e3d3; border-radius: 3px; overflow: hidden; }
+.model-glance b { height: 100%; display: block; }
+.today-foot { display: flex; justify-content: space-between; gap: 8px; font-size: 10px; margin-top: 10px; padding-top: 8px; }
+.today-foot span { text-align: right; }
+.phase-band { position: absolute; top: 0; left: 5px; right: 5px; height: 3px; border-radius: 0 0 4px 4px; background: var(--phase-color); opacity: .8; }
+.day-load { position: absolute; bottom: 3px; left: 6px; right: 6px; height: 2px; background: #ffffff60; border-radius: 2px; overflow: hidden; }
+.day-load i { height: 100%; display: block; }
+.day-cell.recorded-bleed:not(.today) { box-shadow: inset 0 0 0 1px #cc8d7a; }
+.day-cell.predicted:not(.today) { border: 1px dashed #b48370; }
+.load-key { display: flex; align-items: center; gap: 9px; color: var(--muted); font-size: 10px; margin: 10px 4px 0; }
+.load-key i { display: block; height: 5px; border-radius: 5px; flex: 1; background: linear-gradient(90deg,#deece5,#e8eac8,#ecd6a9,#e6b4a2,#bd9cb8); }
+.calendar-key { padding-block: 8px; }
+.cycle-quick-actions { display: flex; gap: 8px; margin-top: 12px; }
+.day-model-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-bottom: 12px; }
+.day-model-heading h3 { font-size: 19px; }
+.load-pill { padding: 6px 10px; border-radius: 12px; font-size: 24px; color: var(--score-color); background: var(--surface); white-space: nowrap; font-weight: 700; }
+.load-pill small { font-size: 11px; color: var(--muted); font-weight: 400; }
+.partner-advice { border: 1px solid #dbe5d5; border-radius: 17px; background: #edf2e7; padding: 14px 15px; margin-bottom: 20px; font-size: 13px; }
+.partner-advice strong { color: var(--teal); }
+.partner-advice ul { margin: 8px 0 0; padding-left: 16px; color: #52685b; }
+.partner-advice li + li { margin-top: 7px; }
+.metric-head { align-items: center; font-size: 13px; }
+.metric-head small { display: block; font-size: 10px; color: var(--muted); margin-top: 2px; }
+.metric-head strong { font-size: 20px; font-weight: 600; }
+.observed-value, .personal-note { color: var(--teal); font-size: 11px; margin-top: 5px; }
+.observation-panel { margin-top: 14px; border-top: 1px solid var(--line); }
+.observation-source { margin: 8px 0 12px; }
+@media (max-width:350px) {
+  .model-lead h2 { font-size: 16px; }
+  .model-overview { gap: 10px; }
+  .model-glance { gap: 6px; }
+  .model-glance span { font-size: 9px; }
+  .today-foot { font-size: 9px; }
+}
+.model-glance > div { min-width: 0; }
+.today-card { padding: 14px 16px; }
+.today-top { margin-bottom: 6px; }
+.model-glance { margin-top: 9px; }
+.quick-actions { margin: 10px 0 14px; }
+.day-cell { height: 44px; }
+@media (max-width:350px) {
+  .today-card { padding: 12px 14px; }
+  .model-ring { flex-basis: 64px; width: 64px; height: 64px; }
+  .model-lead p { font-size: 11px; }
+}
+@media (min-width:480px) { .day-cell { height: 56px; } }

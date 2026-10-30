@@ -9,7 +9,7 @@ function worker({ failInstall = false } = {}) {
     URL, Request,
     fetch: async () => new Response('missing', { status: 404 }),
     caches: {
-      keys: async () => ['other-app-cache', 'bleed-cycle-pwa-v22', 'bleed-cycle-pwa-v24'],
+      keys: async () => ['other-app-cache', 'bleed-cycle-pwa-v22', 'bleed-cycle-pwa-v25'],
       delete: async key => deleted.push(key),
       open: async () => ({
         addAll: async () => { if (failInstall) throw new Error('offline'); },
@@ -40,7 +40,7 @@ function worker({ failInstall = false } = {}) {
   let pending;
   broken.handlers.install({ waitUntil: promise => { pending = promise; } });
   await assert.rejects(pending, /offline/);
-  assert.deepEqual(broken.deleted, ['bleed-cycle-pwa-v24']);
+  assert.deepEqual(broken.deleted, ['bleed-cycle-pwa-v25']);
   assert.equal(broken.skipped(), false);
 
   const healthy = worker();

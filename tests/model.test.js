@@ -299,3 +299,72 @@ function testPersonalPatternsCompareWithinCycles() {
   assert.equal(pattern.count,31);
 }
 testPersonalPatternsCompareWithinCycles();
+
+function partnerFixture(sources = ['reported','reported'], values = [0,0]) {
+  const model = loadModel();
+  const starts = datesFromIntervals('2023-01-01',sources.map(()=>28));
+  const observations = {};
+  sources.forEach((source,cycle) => {
+    for (const day of [0,1,2]) observations[inputDate(model.addDays(model.parseDate(starts[cycle]),day))] = {energy:values[cycle],irritability:values[cycle],source};
+  });
+  setData(model,{cycles:starts.map(start=>({start})),observations});
+  return {model,starts,date:model.addDays(model.parseDate(starts.at(-1)),1)};
+}
+
+function testModelIsPrimaryAfterV24Migration() {
+  const model=loadModel();
+  setData(model,{settings:{showModel:false},cycles:[{start:'2023-01-01'}]});
+  assert.equal(model.state.data.settings.showModel,true,'Restoring the requested product focus must also work for existing v24 users');
+  assert.equal(model.state.data.settings.usePersonalModel,true);
+  assert.ok(model.communicationProfile(model.buildDayModel(model.parseDate('2023-01-02'))).tips.length>=1);
+}
+
+function testPersonalModelNeedsRealHistoryAndKeepsZeros() {
+  const {model,date}=partnerFixture();
+  const day=model.buildDayModel(date);
+  assert.equal(day.personal.energy.mean,0);
+  assert.equal(day.personal.energy.count,6);
+  assert.equal(day.personal.energy.cycles,2);
+  assert.equal(day.personal.energy.source,'reported');
+  assert.equal(day.metrics.energy,Math.round(day.baseMetrics.energy*2/3));
+  assert.ok(Object.values(day.metrics).every(value=>value>=0&&value<=100));
+  model.state.data.settings.usePersonalModel=false;
+  const disabled=model.buildDayModel(date);
+  assert.equal(Object.keys(disabled.personal).length,0);
+  assert.equal(disabled.metrics.energy,disabled.baseMetrics.energy);
+  const insufficient=partnerFixture(['reported'],[4]);
+  assert.equal(Object.keys(insufficient.model.buildDayModel(insufficient.date).personal).length,0);
+}
+
+function testObserversAreNotMixedAndReportedIsPreferred() {
+  const mixed=partnerFixture(['reported','observed'],[0,4]);
+  assert.equal(Object.keys(mixed.model.buildDayModel(mixed.date).personal).length,0,'Three ratings from each different source are not six comparable ratings');
+  const separate=partnerFixture(['reported','reported','observed','observed'],[0,0,4,4]);
+  const personal=separate.model.buildDayModel(separate.date).personal.energy;
+  assert.equal(personal.source,'reported');
+  assert.equal(personal.mean,0);
+  assert.equal(personal.count,6);
+}
+
+function testPersonalForecastCannotTrainOnCurrentOrFutureCycle() {
+  const {model,date,starts}=partnerFixture();
+  const first=model.buildDayModel(date);
+  for(const offset of [0,1,2]) model.state.data.observations[inputDate(model.addDays(model.parseDate(starts.at(-1)),offset))] = {energy:4,source:'reported'};
+  const after=model.buildDayModel(date);
+  assert.equal(after.personal.energy.count,6);
+  assert.equal(after.metrics.energy,first.metrics.energy);
+  const earlier=model.buildDayModel(model.addDays(model.parseDate(starts[1]),1));
+  assert.equal(Object.keys(earlier.personal).length,0,'A past-day forecast cannot see the later completed cycle');
+}
+
+function testAllPartnerMetricsAndLegacySourceSurviveImport() {
+  const model=loadModel();
+  const keys=['stability','sensitivity','irritability','anxiety','energy','fatigue','social','libido','support','conflict','seriousTalk','activePlans','pms'];
+  const entry=Object.fromEntries(keys.map(key=>[key,0]));
+  const normalized=model.normalizeData({observations:{'2023-01-01':{...entry,source:'observed'}}});
+  keys.forEach(key=>assert.equal(normalized.observations['2023-01-01'][key],0));
+  assert.equal(normalized.observations['2023-01-01'].source,'observed');
+  assert.equal(model.normalizeData({observations:{'2023-01-01':{pain:0}}}).observations['2023-01-01'].source,'unspecified');
+}
+[testModelIsPrimaryAfterV24Migration,testPersonalModelNeedsRealHistoryAndKeepsZeros,testObserversAreNotMixedAndReportedIsPreferred,testPersonalForecastCannotTrainOnCurrentOrFutureCycle,testAllPartnerMetricsAndLegacySourceSurviveImport].forEach(test=>test());
+console.log('partner model, source-aware personal adjustments and prospective separation tests passed');
