@@ -167,6 +167,39 @@ function testNoInventedPastCycles() {
   assert.equal(model.getBleedStats().length, 1);
 }
 
+function testConditionalProfileWithinLearnedRange() {
+  const starts = datesFromIntervals("2025-06-01", [29, 28, 31]);
+  const model = loadModel({cycles: starts.map(start => ({start})), settings: {usePersonalModel: true}});
+  const start = model.parseDate(starts.at(-1));
+  const stats = model.getCycleStats();
+  const estimate = model.addDays(start, stats.length);
+  const previous = model.buildDayModel(model.addDays(estimate, -1));
+  const atEstimate = model.buildDayModel(estimate);
+  const lastInRange = model.buildDayModel(model.addDays(estimate, stats.rangeDays));
+  const pastRange = model.buildDayModel(model.addDays(lastInRange.date, 1));
+
+  for (const day of [atEstimate, lastInRange]) {
+    assert.equal(day.conditional, true);
+    assert.equal(day.unknown, false);
+    assert.equal(day.phase, "unknown");
+    assert.equal(day.metrics.load, previous.baseMetrics.load);
+    assert.equal(day.isBleed, false);
+    assert.equal(day.isFertile, false);
+    assert.equal(Object.keys(day.personal).length, 0);
+  }
+  assert.equal(atEstimate.cycleDay, stats.length + 1);
+  assert.equal(inputDate(atEstimate.nextStartDate), inputDate(estimate));
+  assert.equal(pastRange.unknown, true);
+  assert.equal(pastRange.metrics.load, null);
+  assert.equal(model.state.data.cycles.length, starts.length);
+
+  assert.equal(model.upsertCycle({start: inputDate(lastInRange.date)}), true);
+  const recordedStart = model.buildDayModel(lastInRange.date);
+  assert.equal(recordedStart.conditional, false);
+  assert.equal(recordedStart.cycleDay, 1);
+  assert.equal(recordedStart.isRecordedBleed, true);
+}
+
 function testNormalizeMalformedBackup() {
   const model = loadModel();
   const data = model.normalizeData({cycles: [{start: "2026-02-30"}, {start: "2026-01-01", note: {x:1}}, {start: "2026-01-01", end: "2026-01-20"}], settings: {cycleLength: "oops", bleedLength: -10, detail: "oops"}});
@@ -191,7 +224,7 @@ function testFutureForecastsAreExplicit() {
   assert.ok(future.predictionRange.end - future.predictionRange.start > now.predictionRange.end - now.predictionRange.start);
 }
 
-[testRepresentativeHistory, testNoInventedPastCycles, testNormalizeMalformedBackup, testFutureForecastsAreExplicit].forEach(test => test());
+[testRepresentativeHistory, testNoInventedPastCycles, testConditionalProfileWithinLearnedRange, testNormalizeMalformedBackup, testFutureForecastsAreExplicit].forEach(test => test());
 console.log("history, missing records, validation and forecast regressions passed");
 
 function testEditingCannotReplaceAnotherRecord() {

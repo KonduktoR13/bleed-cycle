@@ -3,9 +3,9 @@ const fs = require('node:fs');
 const http = require('node:http');
 const { execFileSync } = require('node:child_process');
 const { chromium, webkit, firefox } = require('playwright');
-const version = 'v25', nextVersion = 'v26';
+const version = 'v26', nextVersion = 'v27';
 const files = ['index.html', 'app.js', 'styles.css', 'service-worker.js', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
-const revisions = {v22:'919f33f',v23:'1cd16a0',v24:'d06795d'};
+const revisions = {v22:'919f33f',v23:'1cd16a0',v24:'d06795d',v25:'69d277a'};
 const prior = Object.fromEntries(Object.entries(revisions).map(([v, revision])=>[v,Object.fromEntries(files.map(name=>[name,execFileSync('git',['show',`${revision}:${name}`])]))]));
 const mime = {html:'text/html',js:'text/javascript',css:'text/css',webmanifest:'application/manifest+json',svg:'image/svg+xml',png:'image/png'};
 let release = version;
@@ -13,13 +13,14 @@ const server = http.createServer((req, res) => {
   const name = new URL(req.url, 'http://localhost').pathname.replace(/^\/bleed-cycle\//, '') || 'index.html';
   if (!files.includes(name)) { res.writeHead(404); return res.end(); }
   let body = prior[release]?.[name] || fs.readFileSync(name);
-  if (release === nextVersion && ['index.html','app.js','service-worker.js'].includes(name)) body = Buffer.from(body.toString().replaceAll(version, nextVersion).replaceAll('v=25', 'v=26'));
+  if (release === nextVersion && ['index.html','app.js','service-worker.js'].includes(name)) body = Buffer.from(body.toString().replaceAll(version, nextVersion).replaceAll('v=26', 'v=27'));
   res.writeHead(200, {'Content-Type': mime[name.split('.').pop()], 'Cache-Control': 'no-store'});
   res.end(body);
 });
-const fixture = fs.readFileSync(process.env.PRIVATE_BACKUP || '/dev/null', 'utf8') || JSON.stringify({version:1, cycles:[
+const syntheticBackup = JSON.stringify({version:1, cycles:[
   {start:'2026-08-30',end:'2026-09-03'}, {start:'2026-09-28',end:'2026-10-02'}, {start:'2026-10-26'}
 ], settings:{cycleLength:28,bleedLength:5},notes:{}});
+const fixture = fs.readFileSync(process.env.PRIVATE_BACKUP || '/dev/null', 'utf8') || syntheticBackup;
 const browserType = process.env.BROWSER === 'firefox' ? firefox : process.env.BROWSER === 'webkit' ? webkit : chromium;
 const screenshot = (page, name, fullPage = true) => page.screenshot({path:`/tmp/bleed-${process.env.BROWSER ? process.env.BROWSER + "-" : ""}${name}.png`,fullPage,animations:'disabled'});
 const count = JSON.parse(fixture).cycles.length;
@@ -36,7 +37,7 @@ const count = JSON.parse(fixture).cycles.length;
     await page.clock.install({time:new Date('2026-10-27T10:00:00+02:00')});
     await page.goto(url);
     await page.locator('#onboarding:not(.hidden)').waitFor();
-    await screenshot(page, 'v25-onboarding-390');
+    await screenshot(page, 'v26-onboarding-390');
     await page.locator('#importWelcome').setInputFiles({name:'history.json',mimeType:'application/json',buffer:Buffer.from(fixture)});
     await page.locator('.day-cell').first().waitFor();
     assert.equal(await page.locator('.day-cell').count(),35,'October 2026 needs five rows');
@@ -47,7 +48,7 @@ const count = JSON.parse(fixture).cycles.length;
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,`${width}px must not scroll horizontally`);
       const layout = await page.evaluate(() => ({calendarBottom:document.getElementById('calendarGrid').getBoundingClientRect().bottom,navTop:document.querySelector('.tabs').getBoundingClientRect().top}));
       assert.ok(layout.calendarBottom <= layout.navTop,`Calendar cells must be visible above bottom nav at ${width}px`);
-      await screenshot(page,`v25-home-${width}`);
+      await screenshot(page,`v26-home-${width}`);
     }
     await page.setViewportSize({width:390,height:844});
     await page.locator('#nextMonth').click();
@@ -63,7 +64,7 @@ const count = JSON.parse(fixture).cycles.length;
     assert.equal(await page.evaluate(() => document.activeElement.dataset.date),'2026-10-28');
     if (browserType===chromium) await page.locator('#diaryTodayButton').tap();
     else await page.locator('#diaryTodayButton').click();
-    await screenshot(page,'v25-diary',false);
+    await screenshot(page,'v26-diary',false);
     assert.equal(await page.evaluate(() => document.querySelector('main').inert),true);
     assert.equal(await page.locator('.metric').count(),13,'The partner model is primary without enabling a setting');
     assert.equal(await page.locator('#dayModel').isVisible(),true);
@@ -89,10 +90,10 @@ const count = JSON.parse(fixture).cycles.length;
     await page.locator('#newCycleSubmit').click();
     await page.locator('.tab[data-view="history"]').click();
     await page.clock.runFor(4000);
-    await screenshot(page,'v25-history-390');
+    await screenshot(page,'v26-history-390');
     assert.match(await page.locator('#personalPatterns').innerText(),/Дней с оценками самочувствия: 1/);
     await page.locator('.tab[data-view="settings"]').click();
-    await screenshot(page,'v25-settings-390');
+    await screenshot(page,'v26-settings-390');
     const snapshot = await page.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1'));
     const invalidDialog = page.waitForEvent('dialog');
     await page.locator('#importInput').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"version":1,"cycles":[{"start":"not-a-date"}]}')});
@@ -120,41 +121,58 @@ const count = JSON.parse(fixture).cycles.length;
     await page.locator('#dayNote').fill('Unsaved text survives an update');
     release = nextVersion;
     await page.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-    await page.waitForFunction(async () => (await caches.keys()).includes('bleed-cycle-pwa-v26'));
+    await page.waitForFunction(async v => (await caches.keys()).includes(`bleed-cycle-pwa-${v}`), nextVersion);
     await page.locator('#updateButton:not(.hidden-install)').waitFor({state:'attached'});
     assert.equal(await page.locator('#dayNote').inputValue(),'Unsaved text survives an update');
-    assert.equal(await page.locator('script[src="app.js?v=25"]').count(),1);
+    assert.equal(await page.locator('script[src="app.js?v=26"]').count(),1);
     await page.locator('#saveDayNote').click(); await page.keyboard.press('Escape');
     await page.locator('#updateButton').click();
-    await page.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=26"]')));
+    await page.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=27"]')));
     await page.locator('.day-cell').first().waitFor();
     assert.match(await page.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')),/Unsaved text survives an update/);
     assert.deepEqual(errors,[]);
     await context.close();
 
-    if (browserType === chromium) for (const old of ['v22','v23','v24']) {
+    if (browserType === chromium) for (const old of Object.keys(revisions)) {
       release = old;
-      const legacy = await browser.newContext({viewport:{width:390,height:844}});
+      const conditional = old === 'v25';
+      const legacy = await browser.newContext({viewport:{width:390,height:844},timezoneId:'Europe/Tallinn'});
       const oldPage = await legacy.newPage();
-      await oldPage.clock.install({time:new Date('2026-10-27T10:00:00+02:00')});
+      await oldPage.clock.install({time:new Date(conditional ? '2026-11-25T10:00:00+02:00' : '2026-10-27T10:00:00+02:00')});
       await oldPage.goto(url);
-      const legacyData = old === 'v24' ? JSON.stringify({...JSON.parse(fixture),settings:{...JSON.parse(fixture).settings,showModel:false}}) : fixture;
+      const legacyData = old === 'v24' ? JSON.stringify({...JSON.parse(fixture),settings:{...JSON.parse(fixture).settings,showModel:false}}) : conditional ? syntheticBackup : fixture;
       await oldPage.evaluate(async data => {localStorage.setItem('bleed-cycle-pwa-v1',data);await navigator.serviceWorker.ready;},legacyData);
       await oldPage.waitForFunction(() => Boolean(navigator.serviceWorker.controller));
       await oldPage.reload();
       if (old === 'v23') await screenshot(oldPage,'v23-before-390');
+      if (conditional) assert.equal(await oldPage.locator('#todayLoad').innerText(),'—');
       release = version;
       await oldPage.evaluate(async () => (await navigator.serviceWorker.getRegistration()).update());
-      await oldPage.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=25"]')));
+      await oldPage.waitForFunction(() => Boolean(document.querySelector('script[src="app.js?v=26"]')));
       await oldPage.locator('.day-cell').first().waitFor();
       assert.equal(await oldPage.evaluate(() => localStorage.getItem('bleed-cycle-pwa-v1')),legacyData);
       assert.equal(await oldPage.locator('#todayLoad').isVisible(),true);
+      if (conditional) {
+        assert.match(await oldPage.locator('#todayLoad').innerText(),/^\d+$/);
+        assert.match(await oldPage.locator('#todayCard .phase-tag').innerText(),/День 31 · фаза неясна/);
+        assert.match(await oldPage.locator('.day-cell.today').getAttribute('aria-label'),/условный прогноз/);
+        assert.equal(await oldPage.locator('.day-cell.today .marker').count(),0);
+        await screenshot(oldPage,'v26-conditional-390');
+        await oldPage.setViewportSize({width:320,height:740});
+        assert.equal(await oldPage.evaluate(() => document.documentElement.scrollWidth > innerWidth),false);
+        await screenshot(oldPage,'v26-conditional-320');
+      }
       await oldPage.locator('.day-cell.today').click();
       assert.equal(await oldPage.locator('.metric').count(),13);
+      if (conditional) {
+        assert.match(await oldPage.locator('#dayModel').innerText(),/Оценочный прогноз/);
+        await screenshot(oldPage,'v26-conditional-diary-320',false);
+      }
       await oldPage.keyboard.press('Escape');
       await legacy.setOffline(true);await oldPage.reload();
       await oldPage.locator('.day-cell').first().waitFor();
-      assert.equal(await oldPage.locator('.day-cell').count(),35);
+      assert.equal(await oldPage.locator('.day-cell').count(),conditional ? 42 : 35);
+      if (conditional) assert.match(await oldPage.locator('#todayLoad').innerText(),/^\d+$/);
       await legacy.close();
     }
     console.log(`${process.env.BROWSER || 'chromium'}: four mobile sizes, diary, history, settings, privacy, Android back, offline, form protection and upgrade passed`);

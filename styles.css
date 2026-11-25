@@ -218,6 +218,9 @@ button:disabled { opacity: .45; cursor: default; }
 .day-cell { height: 44px; }
 @media (max-width:350px) {
   .today-card { padding: 12px 14px; }
+  .today-top { gap: 6px; }
+  .today-top .eyebrow { font-size: 10px; letter-spacing: .25px; }
+  .today-top .phase-tag { font-size: 10px; padding-inline: 6px; }
   .model-ring { flex-basis: 64px; width: 64px; height: 64px; }
   .model-lead p { font-size: 11px; }
 }
