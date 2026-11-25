@@ -61,12 +61,16 @@ svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width:
 .day-cell.predicted { border: 1px dashed #d5a599; }
 .day-markers { height: 5px; display: flex; align-items: center; justify-content: center; gap: 3px; }
 .marker, .note-marker, .key-dot { width: 5px; height: 5px; border-radius: 50%; display: inline-block; background: #c26b59; }
+.marker.bleed, .key-dot.bleed { width: 7px; height: 7px; border: 1px solid #a34438; border-radius: 0 65% 65% 65%; background: #a34438; transform: rotate(45deg); }
+.bleed.predicted { background: transparent; }
+.start-range-marker { display: inline-block; width: 9px; border-top: 2px dotted #5d6266; }
+.start-range-key { margin-top: 2px; color: var(--muted); font-size: 10px; }
+.start-range-key .start-range-marker { margin-right: 5px; vertical-align: middle; }
 .marker.fertile { background: #c09b53; border-radius: 1px; transform: rotate(45deg); }
 .note-marker { background: var(--teal); font-size: 0; }
 .calendar-key { display: flex; align-items: center; justify-content: center; gap: 15px; padding: 13px 0 10px; font-size: 10px; color: var(--muted); }
 .calendar-key > span { display: flex; align-items: center; gap: 5px; }
 .key-dot { width: 7px; height: 7px; }
-.key-dot.predicted { background: transparent; border: 1px dashed #bd806f; }
 .key-dot.note { background: var(--teal); }
 .calendar-explanation { border-top: 1px solid var(--line); padding: 0 5px; font-size: 12px; color: var(--muted); }
 summary { list-style: none; display: flex; align-items: center; justify-content: space-between; gap: 10px; min-height: 48px; font-size: 13px; font-weight: 550; color: var(--ink); }

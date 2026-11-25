@@ -1,5 +1,5 @@
 const STORAGE_KEY = "bleed-cycle-pwa-v1";
-const APP_VERSION = "v26";
+const APP_VERSION = "v27";
 const MS_DAY = 24 * 60 * 60 * 1000;
 const LUTEAL_PRIOR_DAYS = 14;
 const MIN_VALID_CYCLE_DAYS = 15;
@@ -327,8 +327,10 @@ function renderCalendar() {
   const start = startOfWeek(first);
   const days = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
   const count = Math.ceil((daysBetween(start, first) + days) / 7) * 7;
+  let startRange = null;
   for (let i = 0; i < count; i += 1) {
     const date = addDays(start, i), model = buildDayModel(date);
+    if (model.inStartRange) startRange = model.firstStartRange;
     const cell = document.createElement("button");
     cell.type = "button";
     cell.className = "day-cell";
@@ -338,12 +340,19 @@ function renderCalendar() {
     cell.classList.toggle("today", sameDay(date, new Date()));
     if (sameDay(date, new Date())) cell.setAttribute("aria-current", "date");
     cell.classList.toggle("recorded-bleed", model.isRecordedBleed);
-    cell.classList.toggle("predicted", model.isBleed && !model.isRecordedBleed);
+    cell.classList.toggle("predicted", model.isPredictedBleed);
     cell.style.setProperty("--phase-color", phaseColors[model.phase]);
-    cell.setAttribute("aria-label", `${formatDate(date)}, ${model.cycleDay > 0 ? `день цикла ${model.cycleDay}, ` : ""}${model.phaseLabel}, нагрузка модели ${model.metrics.load ?? "не определена"}${model.isRecordedBleed ? ", кровотечение отмечено" : model.isBleed ? ", предполагаемая менструация" : ""}${hasDiaryEntry(date) ? ", есть запись в дневнике" : ""}`);
+    cell.setAttribute("aria-label", `${formatDate(date)}, ${model.cycleDay > 0 ? `день цикла ${model.cycleDay}, ` : ""}${model.phaseLabel}, нагрузка модели ${model.metrics.load ?? "не определена"}${model.isRecordedBleed ? ", кровотечение отмечено" : model.isPredictedBleed ? ", кровотечение по прогнозу" : ""}${model.inStartRange ? ", возможный день начала" : ""}${hasDiaryEntry(date) ? ", есть запись в дневнике" : ""}`);
     cell.innerHTML = `<span class="phase-band" aria-hidden="true"></span><strong>${date.getDate()}</strong><div class="day-markers" aria-hidden="true">${markers(model)}</div><span class="day-load" aria-hidden="true"><i style="width:${model.metrics.load ?? 0}%;background:${modelColor(model.metrics.load)}"></i></span>`;
     cell.addEventListener("click", () => { if (Date.now() >= (state.swipeUntil || 0)) openDaySheet(model); });
     els.calendarGrid.appendChild(cell);
+  }
+  const startRangeKey = document.getElementById("startRangeKey");
+  startRangeKey.hidden = !startRange;
+  if (startRange) {
+    const dates = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short" });
+    const label = dates.formatRange?.(startRange.start, startRange.end) ?? `${dates.format(startRange.start)} — ${dates.format(startRange.end)}`;
+    startRangeKey.lastElementChild.textContent = `Окно начала · ${label}`;
   }
 }
 
@@ -438,7 +447,8 @@ function buildDayModel(dateLike) {
   const start = canProject ? getCycleAnchorStart(cycle, date, forecastCycleLen) : baseStart;
   const projectedCycles = canProject ? Math.max(0, Math.floor(daysBetween(baseStart, date) / forecastCycleLen)) : 0;
   const cycleLen = hasKnownNextStart ? daysBetween(start, nextRecordedStart) : forecastCycleLen;
-  const bleedLen = projectedCycles ? bleedStats.length : getBleedLength(cycle);
+  const recordedCycleBleedLen = getBleedLength(cycle);
+  const bleedLen = projectedCycles ? bleedStats.length : recordedCycleBleedLen;
   const cycleDay = daysBetween(start, date) + 1;
   const projectedStart = hasKnownNextStart ? nextRecordedStart : addDays(start, forecastCycleLen);
   const expectedBleedEnd = addDays(projectedStart, bleedStats.length - 1);
@@ -457,6 +467,12 @@ function buildDayModel(dateLike) {
   const recordedBleed = !beforeHistory && !projectedCycles && (sameDay(date, baseStart) || Boolean(cycle.end && date <= parseDate(cycle.end)));
   const rangeDays = Math.ceil(cycleStats.rangeDays * Math.sqrt(projectedCycles + 1));
   const predictionRange = { start: addDays(projectedStart, -rangeDays), end: addDays(projectedStart, rangeDays) };
+  const firstStartRange = {
+    start: addDays(baseStart, Math.max(recordedCycleBleedLen, forecastCycleLen - cycleStats.rangeDays)),
+    end: addDays(firstPrediction, cycleStats.rangeDays)
+  };
+  const forecastsNextBleed = !hasKnownNextStart && recordedCycleBleedLen <= forecastCycleLen;
+  const inStartRange = forecastsNextBleed && date >= firstStartRange.start && date <= firstStartRange.end;
   const conditional = overdue && !uncertainGap && !recordedBleed && cycleDay > bleedLen
     && cycleStats.usedIntervals > 0 && date <= predictionRange.end;
   const unknown = beforeHistory || (overdue && !conditional || uncertainGap) && !recordedBleed && cycleDay > bleedLen;
@@ -502,6 +518,8 @@ function buildDayModel(dateLike) {
     const weights = {sensitivity:0.22, irritability:0.18, anxiety:0.16, fatigue:0.16, support:0.14, pms:0.14};
     metrics.load = clamp(Math.round(baseMetrics.load + Object.entries(weights).reduce((sum, [key, weight]) => sum + weight * (metrics[key] - baseMetrics[key]), 0)), 0, 100);
   }
+  const isBleed = !unknown && cycleDay >= 1 && cycleDay <= bleedLen;
+  const isPredictedBleed = !recordedBleed && (isBleed || (forecastsNextBleed && overdue && date <= expectedBleedEnd));
   return {
     date,
     baseMetrics,
@@ -512,11 +530,14 @@ function buildDayModel(dateLike) {
     daysToNext,
     nextStartDate: beforeHistory ? baseStart : projectedStart,
     predictionRange,
+    firstStartRange,
+    inStartRange,
     overdue,
     conditional,
     unknown,
     projectedCycles,
     isRecordedBleed: recordedBleed,
+    isPredictedBleed,
     expectedBleedEndDate: expectedBleedEnd,
     ovulationDay,
     ovulationDate: ovulation,
@@ -530,7 +551,7 @@ function buildDayModel(dateLike) {
     cycleContext,
     metrics,
     explanation: conditional ? "Показан общий профиль конца цикла на случай, если цикл ещё продолжается." : explanationFor(phase, confidenceProfile, cycleStats, bleedStats, cycleContext),
-    isBleed: !unknown && cycleDay >= 1 && cycleDay <= bleedLen,
+    isBleed,
     isFertile: !unknown && !conditional && cycleDay >= fertileWindow.startDay && cycleDay <= fertileWindow.endDay
   };
 }
@@ -809,11 +830,12 @@ function openDaySheet(model, options = {}) {
   const displayedMetrics = state.data.settings.detail === "short" ? selectedMetrics.filter(([id]) => ["sensitivity", "energy", "support", "irritability"].includes(id)) : selectedMetrics;
   const renderField = ([id, label, labels]) => `<label>${label}<select id="diary_${id}" ${future ? "disabled" : ""}><option value="">Не отмечено</option>${labels.map((text, i) => `<option value="${i}" ${entry[id] === i ? "selected" : ""}>${text}</option>`).join("")}</select></label>`;
   const cycle = getCycleForDate(model.date);
-  const status = model.isRecordedBleed ? "Кровотечение отмечено" : model.isBleed ? "Предполагаемая менструация" : model.unknown ? "Недостаточно записей" : model.phaseLabel;
+  const status = model.isRecordedBleed ? "Кровотечение отмечено" : model.isPredictedBleed ? "Кровотечение по прогнозу" : model.unknown ? "Недостаточно записей" : model.phaseLabel;
   els.sheetContent.innerHTML = `
-    <div class="sheet-title"><p class="eyebrow">${model.cycleDay > 0 ? `День цикла ${model.cycleDay}` : "До первой записи"}</p><h2 id="sheetTitle">${formatDate(model.date)}</h2><p>${status}</p></div>
+    <div class="sheet-title"><p class="eyebrow">${model.cycleDay > 0 ? `День цикла ${model.cycleDay}` : "До первой записи"}</p><h2 id="sheetTitle">${formatDate(model.date)}</h2><p>${status}${model.inStartRange ? " · окно начала" : ""}</p></div>
     <section class="day-model" id="dayModel">
       <div class="day-model-heading"><h3>${profile.title}</h3><span class="load-pill" style="--score-color:${modelColor(model.metrics.load)}">${model.metrics.load ?? "—"}<small>/100</small></span></div>
+      ${model.conditional ? '<p class="scale-note">Показатели для случая, если цикл ещё продолжается.</p>' : ""}
       <div class="partner-advice"><strong>Как поддержать</strong><ul>${profile.tips.map(text => `<li>${text}</li>`).join("")}</ul></div>
       <div class="metric-list">${displayedMetrics.map(([key,label,evidence]) => modelMetricRow(model,key,label,evidence)).join("")}</div>
       <p class="scale-note">Расчёт по циклу; 0–100 — относительные индексы. ${Object.keys(model.personal).length ? "Личные поправки отмечены у показателей." : "Личных наблюдений пока недостаточно для поправок."}</p>
@@ -1110,7 +1132,9 @@ function dayBackground(model) {
 
 function markers(model) {
   const output = [];
-  if (model.isBleed) output.push('<span class="marker bleed"></span>');
+  if (model.isRecordedBleed) output.push('<span class="marker bleed recorded"></span>');
+  if (model.isPredictedBleed) output.push('<span class="marker bleed predicted"></span>');
+  if (model.inStartRange) output.push('<span class="start-range-marker"></span>');
   if (model.isFertile && state.data.settings.showFertility) output.push('<span class="marker fertile"></span>');
   if (hasDiaryEntry(model.date)) output.push('<span class="note-marker"></span>');
   return output.join("");
