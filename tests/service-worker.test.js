@@ -9,7 +9,7 @@ function worker({ failInstall = false } = {}) {
     URL, Request,
     fetch: async () => new Response('missing', { status: 404 }),
     caches: {
-      keys: async () => ['other-app-cache', 'bleed-cycle-pwa-v22', 'bleed-cycle-pwa-v25', 'bleed-cycle-pwa-v26'],
+      keys: async () => ['other-app-cache', 'bleed-cycle-pwa-v22', 'bleed-cycle-pwa-v25', 'bleed-cycle-pwa-v26', 'bleed-cycle-pwa-v27'],
       delete: async key => deleted.push(key),
       open: async () => ({
         addAll: async () => { if (failInstall) throw new Error('offline'); },
@@ -40,7 +40,7 @@ function worker({ failInstall = false } = {}) {
   let pending;
   broken.handlers.install({ waitUntil: promise => { pending = promise; } });
   await assert.rejects(pending, /offline/);
-  assert.deepEqual(broken.deleted, ['bleed-cycle-pwa-v26']);
+  assert.deepEqual(broken.deleted, ['bleed-cycle-pwa-v27']);
   assert.equal(broken.skipped(), false);
 
   const healthy = worker();
@@ -49,7 +49,7 @@ function worker({ failInstall = false } = {}) {
   assert.equal(healthy.skipped(), true);
   healthy.handlers.activate({ waitUntil: promise => { pending = promise; } });
   await pending;
-  assert.deepEqual(healthy.deleted, ['bleed-cycle-pwa-v22', 'bleed-cycle-pwa-v25']);
+  assert.deepEqual(healthy.deleted, ['bleed-cycle-pwa-v22', 'bleed-cycle-pwa-v25', 'bleed-cycle-pwa-v26']);
   assert.equal(healthy.messages.length, 1);
 
   healthy.handlers.fetch({ request: { url: 'https://example.com/bleed-cycle/', method: 'GET', mode: 'navigate' }, respondWith: promise => { pending = promise; } });

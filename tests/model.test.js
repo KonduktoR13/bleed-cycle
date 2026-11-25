@@ -108,6 +108,8 @@ function testKnownLateStartSuppressesOldPredictedBleed() {
   const actualStart = model.buildDayModel(model.parseDate("2026-07-30"));
 
   assert.equal(oldPredictedStart.isBleed, false);
+  assert.equal(oldPredictedStart.isPredictedBleed, false);
+  assert.equal(oldPredictedStart.inStartRange, false);
   assert.notEqual(oldPredictedStart.phase, "menstrual");
   assert.equal(dayBeforeActualStart.cycleContext.source, "actual");
   assert.equal(dayBeforeActualStart.cycleLength, 60);
@@ -177,6 +179,9 @@ function testConditionalProfileWithinLearnedRange() {
   const atEstimate = model.buildDayModel(estimate);
   const lastInRange = model.buildDayModel(model.addDays(estimate, stats.rangeDays));
   const pastRange = model.buildDayModel(model.addDays(lastInRange.date, 1));
+  const firstInRange = model.buildDayModel(model.addDays(estimate, -stats.rangeDays));
+  const beforeRange = model.buildDayModel(model.addDays(firstInRange.date, -1));
+  const afterPredictedBleed = model.buildDayModel(model.addDays(atEstimate.expectedBleedEndDate, 1));
 
   for (const day of [atEstimate, lastInRange]) {
     assert.equal(day.conditional, true);
@@ -184,6 +189,8 @@ function testConditionalProfileWithinLearnedRange() {
     assert.equal(day.phase, "unknown");
     assert.equal(day.metrics.load, previous.baseMetrics.load);
     assert.equal(day.isBleed, false);
+    assert.equal(day.isPredictedBleed, true);
+    assert.equal(day.inStartRange, true);
     assert.equal(day.isFertile, false);
     assert.equal(Object.keys(day.personal).length, 0);
   }
@@ -191,6 +198,12 @@ function testConditionalProfileWithinLearnedRange() {
   assert.equal(inputDate(atEstimate.nextStartDate), inputDate(estimate));
   assert.equal(pastRange.unknown, true);
   assert.equal(pastRange.metrics.load, null);
+  assert.equal(pastRange.isPredictedBleed, true, 'Bleeding can be estimated to continue after the window for its start');
+  assert.equal(pastRange.inStartRange, false);
+  assert.equal(firstInRange.inStartRange, true);
+  assert.equal(firstInRange.isPredictedBleed, false);
+  assert.equal(beforeRange.inStartRange, false);
+  assert.equal(afterPredictedBleed.isPredictedBleed, false);
   assert.equal(model.state.data.cycles.length, starts.length);
 
   assert.equal(model.upsertCycle({start: inputDate(lastInRange.date)}), true);
@@ -198,6 +211,9 @@ function testConditionalProfileWithinLearnedRange() {
   assert.equal(recordedStart.conditional, false);
   assert.equal(recordedStart.cycleDay, 1);
   assert.equal(recordedStart.isRecordedBleed, true);
+  assert.equal(recordedStart.isPredictedBleed, false);
+  assert.equal(recordedStart.inStartRange, false);
+  assert.equal(model.buildDayModel(estimate).isPredictedBleed, false);
 }
 
 function testNormalizeMalformedBackup() {
@@ -219,6 +235,8 @@ function testFutureForecastsAreExplicit() {
   const now = model.buildDayModel(model.parseDate(today));
   assert.equal(future.cycleDay, 1);
   assert.equal(future.isRecordedBleed, false);
+  assert.equal(future.isPredictedBleed, true);
+  assert.equal(future.inStartRange, true);
   assert.equal(future.bleedLength, 1);
   assert.ok(future.confidence < now.confidence);
   assert.ok(future.predictionRange.end - future.predictionRange.start > now.predictionRange.end - now.predictionRange.start);
